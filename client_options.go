@@ -89,6 +89,13 @@ func MaxIdleConnsPerHost(maxIdleConnsPerHost int) Option {
 	}
 }
 
+func Timeout(timeout time.Duration) Option {
+	return func(state *optionState) error {
+		state.client.Timeout = timeout
+		return nil
+	}
+}
+
 func defaultTlsConfig() *tls.Config {
 	return &tls.Config{
 		// Can't use SSLv3 because of POODLE and BEAST

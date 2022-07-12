@@ -7,6 +7,7 @@ Supported options are:
 |-----------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Debug                       | Print debugging info to provided logger.                                                                                                                                  |
 | UserAgent                   | Change the UserAgent header, if not set.                                                                                                                                  |
+| Timeout                     | Set the client request timeout.                                                                                                                                           |
 | DisableHttp2                | Disable HTTP2 connections.                                                                                                                                                |
 | Http2Transport              | Configure HTTP2 transport.                                                                                                                                                |
 | AutoDeflate                 | Disable automatic deflation of gzip responses.                                                                                                                            |
