@@ -11,32 +11,41 @@ type Client interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-type optionState struct {
-	dynamic *roundtrippers.DynamicTransportTripper
-	h1root  *http.Transport
-	h2root  *http2.Transport
-	client  *http.Client
+type OptionState struct {
+	Dynamic *roundtrippers.DynamicTransportTripper
+	H1root  *http.Transport
+	H2root  *http2.Transport
+	Client  *http.Client
 }
 
-type Option func(state *optionState) error
+type Option func(state *OptionState) error
 
-func NewClient(options ...Option) (Client, error) {
-	state := optionState{}
-	if err := defaultClient()(&state); err != nil {
-		return nil, err
-	}
-	if err := dynamicClient()(&state); err != nil {
-		return nil, err
-	}
+func NewClientManual(options ...Option) (Client, error) {
+	state := OptionState{}
 	for _, wrapper := range options {
 		if err := wrapper(&state); err != nil {
 			return nil, err
 		}
 	}
+	return state.Client, nil
+}
+
+func NewClient(options ...Option) (Client, error) {
+	fullLen := 3 + len(options)
 	if len(options) > 0 {
-		if err := cloneRequest()(&state); err != nil {
-			return nil, err
-		}
+		fullLen += 1
 	}
-	return state.client, nil
+
+	allOptions := make([]Option, 0, fullLen)
+	allOptions = append(allOptions,
+		ManualDefaultTransport(),
+		ManualDefaultClient(),
+		ManualDynamicClient(),
+	)
+	allOptions = append(allOptions, options...)
+	if len(options) > 0 {
+		allOptions = append(allOptions, ManualCloneRequest())
+	}
+
+	return NewClientManual(allOptions...)
 }

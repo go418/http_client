@@ -21,77 +21,102 @@ import (
 	"golang.org/x/net/http2"
 )
 
-func defaultClient() Option {
-	return func(state *optionState) error {
-		state.h1root = http.DefaultTransport.(*http.Transport).Clone()
-		state.client = &http.Client{
-			Transport: state.h1root,
+func ManualTransport(transport *http.Transport) Option {
+	return func(state *OptionState) error {
+		if state.H1root != nil {
+			return fmt.Errorf("http.Transport is populated already")
 		}
+		state.H1root = transport.Clone()
 		return nil
 	}
 }
 
-func dynamicClient() Option {
-	return func(state *optionState) error {
-		if h1root, ok := state.client.Transport.(*http.Transport); !ok {
+func ManualDefaultTransport() Option {
+	return ManualTransport(http.DefaultTransport.(*http.Transport))
+}
+
+func ManualClient(client *http.Client) Option {
+	return func(state *OptionState) error {
+		if state.H1root == nil {
+			return fmt.Errorf("no http.Transport found, cannot create a client")
+		}
+		if state.Client != nil {
+			return fmt.Errorf("http.Client is populated already")
+		}
+		client.Transport = state.H1root
+		state.Client = client
+		return nil
+	}
+}
+
+func ManualDefaultClient() Option {
+	return ManualClient(&http.Client{})
+}
+
+func ManualDynamicClient() Option {
+	return func(state *OptionState) error {
+		if state.Client == nil {
+			return fmt.Errorf("no client was configured")
+		}
+		if h1root, ok := state.Client.Transport.(*http.Transport); !ok {
 			return fmt.Errorf("DynamicClient should be first registered RoundTripper")
 		} else {
-			state.dynamic = roundtrippers.NewDynamicTransportTripper(h1root)
-			state.client.Transport = state.dynamic
+			state.Dynamic = roundtrippers.NewDynamicTransportTripper(h1root)
+			state.Client.Transport = state.Dynamic
 			return nil
 		}
 	}
 }
 
 func Http2Transport(timeout time.Duration, keepAlive time.Duration) Option {
-	return func(state *optionState) error {
-		if h2root, err := http2.ConfigureTransports(state.h1root); err != nil {
+	return func(state *OptionState) error {
+		if h2root, err := http2.ConfigureTransports(state.H1root); err != nil {
 			return err
 		} else {
-			state.h2root = h2root
+			state.H2root = h2root
 			return nil
 		}
 	}
 }
 
 func DisableHttp2() Option {
-	return func(state *optionState) error {
-		if state.h2root != nil {
+	return func(state *OptionState) error {
+		if state.H2root != nil {
 			return fmt.Errorf("HTTP2 has been enabled explicitly already")
 		}
-		if state.h1root.TLSClientConfig == nil {
-			state.h1root.TLSClientConfig = defaultTlsConfig()
+		if state.H1root.TLSClientConfig == nil {
+			state.H1root.TLSClientConfig = defaultTlsConfig()
 		}
-		state.h1root.TLSClientConfig.NextProtos = []string{"http/1.1"}
-		state.h1root.ForceAttemptHTTP2 = false
+		state.H1root.TLSClientConfig.NextProtos = []string{"http/1.1"}
+		state.H1root.ForceAttemptHTTP2 = false
 		return nil
 	}
 }
 
 func DialContext(fn func(ctx context.Context, network, addr string) (net.Conn, error)) Option {
-	return func(state *optionState) error {
-		state.h1root.DialContext = fn
+	return func(state *OptionState) error {
+		state.H1root.DialContext = fn
 		return nil
 	}
 }
 
 func Proxy(proxy func(*http.Request) (*url.URL, error)) Option {
-	return func(state *optionState) error {
-		state.h1root.Proxy = proxy
+	return func(state *OptionState) error {
+		state.H1root.Proxy = proxy
 		return nil
 	}
 }
 
 func MaxIdleConnsPerHost(maxIdleConnsPerHost int) Option {
-	return func(state *optionState) error {
-		state.h1root.MaxConnsPerHost = maxIdleConnsPerHost
+	return func(state *OptionState) error {
+		state.H1root.MaxConnsPerHost = maxIdleConnsPerHost
 		return nil
 	}
 }
 
 func Timeout(timeout time.Duration) Option {
-	return func(state *optionState) error {
-		state.client.Timeout = timeout
+	return func(state *OptionState) error {
+		state.Client.Timeout = timeout
 		return nil
 	}
 }
@@ -106,34 +131,34 @@ func defaultTlsConfig() *tls.Config {
 }
 
 func TLSInsecureSkipVerify(insecureSkipVerify bool) Option {
-	return func(state *optionState) error {
-		if state.h1root.TLSClientConfig == nil {
-			state.h1root.TLSClientConfig = defaultTlsConfig()
+	return func(state *OptionState) error {
+		if state.H1root.TLSClientConfig == nil {
+			state.H1root.TLSClientConfig = defaultTlsConfig()
 		}
-		state.h1root.TLSClientConfig.InsecureSkipVerify = insecureSkipVerify
+		state.H1root.TLSClientConfig.InsecureSkipVerify = insecureSkipVerify
 		return nil
 	}
 }
 
 func TLSRootCAs(rootCAs *x509.CertPool) Option {
-	return func(state *optionState) error {
-		if state.h1root.TLSClientConfig == nil {
-			state.h1root.TLSClientConfig = defaultTlsConfig()
+	return func(state *OptionState) error {
+		if state.H1root.TLSClientConfig == nil {
+			state.H1root.TLSClientConfig = defaultTlsConfig()
 		}
-		state.h1root.TLSClientConfig.RootCAs = rootCAs
+		state.H1root.TLSClientConfig.RootCAs = rootCAs
 		return nil
 	}
 }
 
 func TLSClientCertificate(fn func(*tls.CertificateRequestInfo) (*tls.Certificate, error)) Option {
-	return func(state *optionState) error {
-		if state.h1root.TLSClientConfig == nil {
-			state.h1root.TLSClientConfig = defaultTlsConfig()
+	return func(state *OptionState) error {
+		if state.H1root.TLSClientConfig == nil {
+			state.H1root.TLSClientConfig = defaultTlsConfig()
 		}
-		if state.h1root.TLSClientConfig.GetClientCertificate != nil {
+		if state.H1root.TLSClientConfig.GetClientCertificate != nil {
 			return fmt.Errorf("GetClientCertificate has been set explicitly already")
 		}
-		state.h1root.TLSClientConfig.GetClientCertificate = fn
+		state.H1root.TLSClientConfig.GetClientCertificate = fn
 		return nil
 	}
 }
@@ -145,17 +170,17 @@ func filesCannotBeDifferent(file1 fs.FileInfo, file2 fs.FileInfo) bool {
 		(file1.Size() == file2.Size())
 }
 
-type DynamicClientCertificateSource func(state *optionState) dynamic_clientcert.DynamicClientCertificate
+type DynamicClientCertificateSource func(state *OptionState) dynamic_clientcert.DynamicClientCertificate
 
 func TLSDynamicClientCertificate(fn DynamicClientCertificateSource) Option {
-	return func(state *optionState) error {
-		if state.h1root.TLSClientConfig == nil {
-			state.h1root.TLSClientConfig = defaultTlsConfig()
+	return func(state *OptionState) error {
+		if state.H1root.TLSClientConfig == nil {
+			state.H1root.TLSClientConfig = defaultTlsConfig()
 		}
-		if state.h1root.TLSClientConfig.GetClientCertificate != nil {
+		if state.H1root.TLSClientConfig.GetClientCertificate != nil {
 			return fmt.Errorf("GetClientCertificate has been set explicitly already")
 		}
-		state.h1root.TLSClientConfig.GetClientCertificate = fn(state).GetClientCertificate
+		state.H1root.TLSClientConfig.GetClientCertificate = fn(state).GetClientCertificate
 		return nil
 	}
 }
@@ -164,7 +189,7 @@ func StartDynamicFileClientCertificateSource(ctx context.Context, log logr.Logge
 	ctx, cancel := context.WithCancel(ctx)
 	var doneCh chan struct{}
 
-	return DynamicClientCertificateSource(func(state *optionState) dynamic_clientcert.DynamicClientCertificate {
+	return DynamicClientCertificateSource(func(state *OptionState) dynamic_clientcert.DynamicClientCertificate {
 			var prevCertStat fs.FileInfo
 			var prevKeyStat fs.FileInfo
 
@@ -203,7 +228,7 @@ func StartDynamicFileClientCertificateSource(ctx context.Context, log logr.Logge
 
 					return &certificate, nil
 				},
-				state.h1root.DialContext,
+				state.H1root.DialContext,
 			)
 
 			go func() {
@@ -223,18 +248,21 @@ func StartDynamicFileClientCertificateSource(ctx context.Context, log logr.Logge
 }
 
 func TLSTime(time func() time.Time) Option {
-	return func(state *optionState) error {
-		if state.h1root.TLSClientConfig == nil {
-			state.h1root.TLSClientConfig = defaultTlsConfig()
+	return func(state *OptionState) error {
+		if state.H1root.TLSClientConfig == nil {
+			state.H1root.TLSClientConfig = defaultTlsConfig()
 		}
-		state.h1root.TLSClientConfig.Time = time
+		state.H1root.TLSClientConfig.Time = time
 		return nil
 	}
 }
 
 func TLSEnableSni() Option {
-	return func(state *optionState) error {
-		state.dynamic.RegisterTransportUpdater(func(req *http.Request, transport *http.Transport, isClone bool) (*http.Transport, error) {
+	return func(state *OptionState) error {
+		if state.Dynamic == nil {
+			return fmt.Errorf("no dynamic roundtripper registered")
+		}
+		state.Dynamic.RegisterTransportUpdater(func(req *http.Request, transport *http.Transport, isClone bool) (*http.Transport, error) {
 			// check if TLS is enabled
 			if transport.TLSClientConfig == nil {
 				return transport, nil
@@ -263,17 +291,20 @@ func TLSEnableSni() Option {
 	}
 }
 
-type DynamicRootCAsSource func(state *optionState) dynamic_rootca.DynamicRootCAs
+type DynamicRootCAsSource func(state *OptionState) dynamic_rootca.DynamicRootCAs
 
 func TLSDynamicRootCAs(fn DynamicRootCAsSource) Option {
-	return func(state *optionState) error {
-		if state.h1root.TLSClientConfig == nil {
-			state.h1root.TLSClientConfig = defaultTlsConfig()
+	return func(state *OptionState) error {
+		if state.H1root.TLSClientConfig == nil {
+			state.H1root.TLSClientConfig = defaultTlsConfig()
+		}
+
+		if state.Dynamic == nil {
+			return fmt.Errorf("no dynamic roundtripper registered")
 		}
 
 		dynamicRootCAsSource := fn(state)
-
-		state.dynamic.RegisterTransportUpdater(func(req *http.Request, transport *http.Transport, isClone bool) (*http.Transport, error) {
+		state.Dynamic.RegisterTransportUpdater(func(req *http.Request, transport *http.Transport, isClone bool) (*http.Transport, error) {
 			if transport.TLSClientConfig == nil {
 				return transport, nil
 			}
@@ -323,7 +354,7 @@ func StartDynamicFileRootCAsSource(ctx context.Context, log logr.Logger, rootCAF
 	ctx, cancel := context.WithCancel(ctx)
 	var doneCh chan struct{}
 
-	return DynamicRootCAsSource(func(state *optionState) dynamic_rootca.DynamicRootCAs {
+	return DynamicRootCAsSource(func(state *OptionState) dynamic_rootca.DynamicRootCAs {
 			var prevRootCAStat fs.FileInfo
 
 			doneCh = make(chan struct{})
@@ -379,17 +410,17 @@ func StartDynamicFileRootCAsSource(ctx context.Context, log logr.Logger, rootCAF
 }
 
 func Debug(log logr.Logger) Option {
-	return func(state *optionState) error {
-		state.client.Transport = roundtrippers.NewDebuggingRoundTripper(log, state.client.Transport)
+	return func(state *OptionState) error {
+		state.Client.Transport = roundtrippers.NewDebuggingRoundTripper(log, state.Client.Transport)
 		return nil
 	}
 }
 
 func DisableCompression(disable bool) Option {
-	return func(state *optionState) error {
-		state.h1root.DisableCompression = disable
-		if state.h2root != nil {
-			state.h2root.DisableCompression = disable
+	return func(state *OptionState) error {
+		state.H1root.DisableCompression = disable
+		if state.H2root != nil {
+			state.H2root.DisableCompression = disable
 		}
 		return nil
 	}
@@ -397,7 +428,7 @@ func DisableCompression(disable bool) Option {
 
 func AutoDeflate(enable bool) Option {
 	disableCompression := DisableCompression(enable)
-	return func(state *optionState) error {
+	return func(state *OptionState) error {
 		// Disable compression
 		if err := disableCompression(state); err != nil {
 			return err
@@ -405,53 +436,53 @@ func AutoDeflate(enable bool) Option {
 
 		// Add roundtripper that adds Gzip Accept-Encoding header,
 		// since this is also disabled when disabling compression
-		state.client.Transport = roundtrippers.NewGzipHeaderRoundTripper(state.client.Transport)
+		state.Client.Transport = roundtrippers.NewGzipHeaderRoundTripper(state.Client.Transport)
 		return nil
 	}
 }
 
 func AuthProxy(username string, groups []string, extra map[string][]string) Option {
-	return func(state *optionState) error {
-		state.client.Transport = roundtrippers.NewAuthProxyRoundTripper(username, groups, extra, state.client.Transport)
+	return func(state *OptionState) error {
+		state.Client.Transport = roundtrippers.NewAuthProxyRoundTripper(username, groups, extra, state.Client.Transport)
 		return nil
 	}
 }
 
 func BasicAuth(username, password string) Option {
-	return func(state *optionState) error {
-		state.client.Transport = roundtrippers.NewBasicAuthRoundTripper(username, password, state.client.Transport)
+	return func(state *OptionState) error {
+		state.Client.Transport = roundtrippers.NewBasicAuthRoundTripper(username, password, state.Client.Transport)
 		return nil
 	}
 }
 
 func BearerAuth(bearer string) Option {
-	return func(state *optionState) error {
-		state.client.Transport = roundtrippers.NewBearerAuthRoundTripper(bearer, state.client.Transport)
+	return func(state *OptionState) error {
+		state.Client.Transport = roundtrippers.NewBearerAuthRoundTripper(bearer, state.Client.Transport)
 		return nil
 	}
 }
 
 func BearerAuthWithRefresh(bearer string, tokenFile string) Option {
-	return func(state *optionState) error {
-		if transport, err := roundtrippers.NewBearerAuthWithRefreshRoundTripper(bearer, tokenFile, state.client.Transport); err != nil {
+	return func(state *OptionState) error {
+		if transport, err := roundtrippers.NewBearerAuthWithRefreshRoundTripper(bearer, tokenFile, state.Client.Transport); err != nil {
 			return err
 		} else {
-			state.client.Transport = transport
+			state.Client.Transport = transport
 			return nil
 		}
 	}
 }
 
 func UserAgent(userAgent string) Option {
-	return func(state *optionState) error {
-		state.client.Transport = roundtrippers.NewUserAgentRoundTripper(userAgent, state.client.Transport)
+	return func(state *OptionState) error {
+		state.Client.Transport = roundtrippers.NewUserAgentRoundTripper(userAgent, state.Client.Transport)
 		return nil
 	}
 }
 
-func cloneRequest() Option {
-	return func(state *optionState) error {
-		state.client.Transport = roundtrippers.NewRequestClonerRoundTripper(state.client.Transport)
+func ManualCloneRequest() Option {
+	return func(state *OptionState) error {
+		state.Client.Transport = roundtrippers.NewRequestClonerRoundTripper(state.Client.Transport)
 		return nil
 	}
 }
