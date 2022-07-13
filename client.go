@@ -22,8 +22,9 @@ type Option func(state *OptionState) error
 
 func NewClientManual(options ...Option) (Client, error) {
 	state := OptionState{}
-	for _, wrapper := range options {
-		if err := wrapper(&state); err != nil {
+	// reverse order of options (this way, the first option is hit first by a request)
+	for i := len(options) - 1; i >= 0; i-- {
+		if err := options[i](&state); err != nil {
 			return nil, err
 		}
 	}
@@ -37,15 +38,17 @@ func NewClient(options ...Option) (Client, error) {
 	}
 
 	allOptions := make([]Option, 0, fullLen)
-	allOptions = append(allOptions,
-		ManualDefaultTransport(),
-		ManualDefaultClient(),
-		ManualDynamicClient(),
-	)
-	allOptions = append(allOptions, options...)
 	if len(options) > 0 {
+		// clone request to make sure the original request is not altered
 		allOptions = append(allOptions, ManualCloneRequest())
 	}
+	allOptions = append(allOptions, options...)
+
+	allOptions = append(allOptions,
+		ManualDynamicClient(),
+		ManualDefaultClient(),
+		ManualDefaultTransport(),
+	)
 
 	return NewClientManual(allOptions...)
 }

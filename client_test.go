@@ -836,8 +836,8 @@ func TestDebug(t *testing.T) {
 	c, err := NewClient(
 		BasicAuth("user", "pass"),
 		UserAgent("test"),
-		Debug(log),
 		DialContext(dialer.DialContext),
+		Debug(log),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -858,8 +858,8 @@ func TestDebug(t *testing.T) {
 			},
 		})
 
-	expectedLog := `V\[6\] HTTP request start requestId 1 verb url (.*)
-V\[7\] HTTP request headers requestId 1
+	expectedLog := `V\[6\] HTTP request start requestId 1 verb url http:\/\/server\.cloudweb123:\d+
+V\[7\] HTTP request headers requestId 1 ((Authorization Basic <masked>\s*)|(User-Agent test\s*))+
 V\[8\] HTTP trace: DNS lookup requestId 1 host server.cloudweb123 resolved \[{127.0.0.1 }\]
 V\[8\] HTTP trace: dial requestId 1 network tcp key (.*) status success
 V\[7\] HTTP statistics requestId 1 DNS lookup \(ms\) \d+ dial \(ms\) \d+ TLS handshake \(ms\) \d+ ServerProcessing \(ms\) \d+ duration \(ms\) \d+
