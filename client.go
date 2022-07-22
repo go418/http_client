@@ -20,11 +20,17 @@ type OptionState struct {
 
 type Option func(state *OptionState) error
 
-func NewClientManual(options ...Option) (Client, error) {
+type ClientBuilder []Option
+
+func (cb ClientBuilder) Add(options ...Option) ClientBuilder {
+	return append(cb, options...)
+}
+
+func (cb ClientBuilder) Complete() (Client, error) {
 	state := OptionState{}
 	// reverse order of options (this way, the first option is hit first by a request)
-	for i := len(options) - 1; i >= 0; i-- {
-		if err := options[i](&state); err != nil {
+	for i := len(cb) - 1; i >= 0; i-- {
+		if err := cb[i](&state); err != nil {
 			return nil, err
 		}
 	}
@@ -32,23 +38,13 @@ func NewClientManual(options ...Option) (Client, error) {
 }
 
 func NewClient(options ...Option) (Client, error) {
-	fullLen := 3 + len(options)
-	if len(options) > 0 {
-		fullLen += 1
-	}
+	builder := ClientBuilder(make([]Option, 0, 4+len(options)))
 
-	allOptions := make([]Option, 0, fullLen)
-	if len(options) > 0 {
-		// clone request to make sure the original request is not altered
-		allOptions = append(allOptions, ManualCloneRequest())
-	}
-	allOptions = append(allOptions, options...)
-
-	allOptions = append(allOptions,
-		ManualDynamicClient(),
-		ManualDefaultClient(),
-		ManualDefaultTransport(),
-	)
-
-	return NewClientManual(allOptions...)
+	return builder.
+		Add(EnableOption(len(options) > 0, ManualCloneRequest())).
+		Add(options...).
+		Add(ManualDynamicClient()).
+		Add(ManualDefaultClient()).
+		Add(ManualDefaultTransport()).
+		Complete()
 }

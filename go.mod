@@ -6,8 +6,8 @@ require (
 	github.com/aojea/mem-resolver v0.2.0
 	github.com/go-logr/logr v1.2.3
 	github.com/tonglil/buflogr v0.0.0-20220517181933-1aba06808d22
-	golang.org/x/net v0.0.0-20220708220712-1185a9018129
-	golang.org/x/oauth2 v0.0.0-20220630143837-2104d58473e0
+	golang.org/x/net v0.0.0-20220722155237-a158d28d115b
+	golang.org/x/oauth2 v0.0.0-20220722155238-128564f6959c
 )
 
 require (

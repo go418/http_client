@@ -32,7 +32,18 @@ func ManualTransport(transport *http.Transport) Option {
 }
 
 func ManualDefaultTransport() Option {
-	return ManualTransport(http.DefaultTransport.(*http.Transport))
+	return ManualTransport(&http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	})
 }
 
 func ManualClient(client *http.Client) Option {
@@ -66,6 +77,13 @@ func ManualDynamicClient() Option {
 			return nil
 		}
 	}
+}
+
+func EnableOption(enable bool, option Option) Option {
+	if !enable {
+		return func(state *OptionState) error { return nil }
+	}
+	return option
 }
 
 func Http2Transport(timeout time.Duration, keepAlive time.Duration) Option {
