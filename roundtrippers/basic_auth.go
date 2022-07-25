@@ -8,7 +8,7 @@ type basicAuthRoundTripper struct {
 	rt       http.RoundTripper
 }
 
-var _ http.RoundTripper = &basicAuthRoundTripper{}
+var _ RoundTripperWrapper = &basicAuthRoundTripper{}
 
 // NewBasicAuthRoundTripper will apply a BASIC auth authorization header to a
 // request unless it has already been set.
@@ -22,4 +22,8 @@ func (rt *basicAuthRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 	}
 	req.SetBasicAuth(rt.username, rt.password)
 	return rt.rt.RoundTrip(req)
+}
+
+func (rt *basicAuthRoundTripper) WrappedRoundTripper() http.RoundTripper {
+	return rt.rt
 }

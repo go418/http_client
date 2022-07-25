@@ -93,7 +93,7 @@ type tokenSourceTransport struct {
 	src  ResettableTokenSource
 }
 
-var _ http.RoundTripper = &tokenSourceTransport{}
+var _ RoundTripperWrapper = &tokenSourceTransport{}
 
 func (tst *tokenSourceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// This is to allow --token to override other bearer token providers.
@@ -109,6 +109,10 @@ func (tst *tokenSourceTransport) RoundTrip(req *http.Request) (*http.Response, e
 		tst.src.ResetTokenOlderThan(start)
 	}
 	return resp, err
+}
+
+func (rt *tokenSourceTransport) WrappedRoundTripper() http.RoundTripper {
+	return rt.base
 }
 
 type fileTokenSource struct {

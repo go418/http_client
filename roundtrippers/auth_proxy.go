@@ -14,7 +14,7 @@ type authProxyRoundTripper struct {
 	rt http.RoundTripper
 }
 
-var _ http.RoundTripper = &authProxyRoundTripper{}
+var _ RoundTripperWrapper = &authProxyRoundTripper{}
 
 // NewAuthProxyRoundTripper provides a roundtripper which will add auth proxy fields to requests for
 // authentication terminating proxy cases
@@ -39,6 +39,10 @@ func (rt *authProxyRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 	SetAuthProxyHeaders(req, rt.username, rt.groups, rt.extra)
 
 	return rt.rt.RoundTrip(req)
+}
+
+func (rt *authProxyRoundTripper) WrappedRoundTripper() http.RoundTripper {
+	return rt.rt
 }
 
 // SetAuthProxyHeaders stomps the auth proxy header fields.  It mutates its argument.

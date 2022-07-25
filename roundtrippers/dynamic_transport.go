@@ -17,7 +17,7 @@ type DynamicTransportTripper struct {
 	updateTransport []TransportUpdater
 }
 
-var _ http.RoundTripper = &DynamicTransportTripper{}
+var _ RoundTripperWrapper = &DynamicTransportTripper{}
 
 func NewDynamicTransportTripper() *DynamicTransportTripper {
 	return &DynamicTransportTripper{}
@@ -94,6 +94,10 @@ func (rt *DynamicTransportTripper) RoundTrip(req *http.Request) (*http.Response,
 	}
 
 	return transport.RoundTrip(req)
+}
+
+func (rt *DynamicTransportTripper) WrappedRoundTripper() http.RoundTripper {
+	return rt.rt.Load().(*http.Transport)
 }
 
 func (rt *DynamicTransportTripper) CloseIdleConnections() {

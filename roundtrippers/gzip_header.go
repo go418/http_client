@@ -3,17 +3,17 @@ package roundtrippers
 import "net/http"
 
 type gzipHeaderRoundTripper struct {
-	next http.RoundTripper
+	rt http.RoundTripper
 }
 
-var _ http.RoundTripper = gzipHeaderRoundTripper{}
+var _ RoundTripperWrapper = gzipHeaderRoundTripper{}
 
 // NewGzipHeaderRoundTripper
 func NewGzipHeaderRoundTripper(rt http.RoundTripper) http.RoundTripper {
 	return &gzipHeaderRoundTripper{rt}
 }
 
-func (ghrt gzipHeaderRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+func (rt gzipHeaderRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Header.Get("Accept-Encoding") == "" &&
 		req.Header.Get("Range") == "" &&
 		req.Method != "HEAD" {
@@ -32,5 +32,9 @@ func (ghrt gzipHeaderRoundTripper) RoundTrip(req *http.Request) (*http.Response,
 		req.Header.Set("Accept-Encoding", "gzip")
 	}
 
-	return ghrt.next.RoundTrip(req)
+	return rt.rt.RoundTrip(req)
+}
+
+func (rt gzipHeaderRoundTripper) WrappedRoundTripper() http.RoundTripper {
+	return rt.rt
 }

@@ -7,7 +7,7 @@ type userAgentRoundTripper struct {
 	rt        http.RoundTripper
 }
 
-var _ http.RoundTripper = &userAgentRoundTripper{}
+var _ RoundTripperWrapper = &userAgentRoundTripper{}
 
 // NewUserAgentRoundTripper will add User-Agent header to a request unless it has already been set.
 func NewUserAgentRoundTripper(userAgent string, rt http.RoundTripper) http.RoundTripper {
@@ -20,4 +20,8 @@ func (rt *userAgentRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 	}
 	req.Header.Set("User-Agent", rt.userAgent)
 	return rt.rt.RoundTrip(req)
+}
+
+func (rt *userAgentRoundTripper) WrappedRoundTripper() http.RoundTripper {
+	return rt.rt
 }

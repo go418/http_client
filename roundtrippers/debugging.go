@@ -55,20 +55,20 @@ func (r *requestInfo) complete(response *http.Response, err error) {
 // debuggingRoundTripper will display information about the requests passing
 // through it based on what is configured
 type debuggingRoundTripper struct {
-	delegatedRoundTripper http.RoundTripper
-	log                   logr.Logger
-	requestId             uint64
+	rt        http.RoundTripper
+	log       logr.Logger
+	requestId uint64
 }
 
-var _ http.RoundTripper = &debuggingRoundTripper{}
+var _ RoundTripperWrapper = &debuggingRoundTripper{}
 
 // NewDebuggingRoundTripper allows to display in the logs output debug information
 // on the API requests performed by the client.
 func NewDebuggingRoundTripper(log logr.Logger, rt http.RoundTripper) http.RoundTripper {
 	return &debuggingRoundTripper{
-		delegatedRoundTripper: rt,
-		log:                   log,
-		requestId:             0,
+		rt:        rt,
+		log:       log,
+		requestId: 0,
 	}
 }
 
@@ -186,7 +186,7 @@ func (rt *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 		req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 	}
 
-	response, err := rt.delegatedRoundTripper.RoundTrip(req)
+	response, err := rt.rt.RoundTrip(req)
 	reqInfo.Duration = time.Since(startTime)
 
 	reqInfo.complete(response, err)
@@ -222,6 +222,10 @@ func (rt *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 	rt.log.V(7).Info("HTTP response headers", extractHeaders(requestId, reqInfo.ResponseHeaders)...)
 
 	return response, err
+}
+
+func (rt *debuggingRoundTripper) WrappedRoundTripper() http.RoundTripper {
+	return rt.rt
 }
 
 func extractHeaders(requestId uint64, headers http.Header) []interface{} {

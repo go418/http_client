@@ -13,7 +13,7 @@ type bearerAuthRoundTripper struct {
 	rt     http.RoundTripper
 }
 
-var _ http.RoundTripper = &bearerAuthRoundTripper{}
+var _ RoundTripperWrapper = &bearerAuthRoundTripper{}
 
 // NewBearerAuthRoundTripper adds the provided bearer token to a request
 // unless the authorization header has already been set.
@@ -54,4 +54,8 @@ func (rt *bearerAuthRoundTripper) RoundTrip(req *http.Request) (*http.Response, 
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 	return rt.rt.RoundTrip(req)
+}
+
+func (rt *bearerAuthRoundTripper) WrappedRoundTripper() http.RoundTripper {
+	return rt.rt
 }
