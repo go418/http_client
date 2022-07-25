@@ -143,15 +143,16 @@ func testTlsServerEnv(t *testing.T, enableHttp2 bool, serverCerts []tls.Certific
 	return testServer.URL, cancel
 }
 
-func checkResponse(t *testing.T, client Client, req *http.Request, expectedRequest *http.Request) {
+func checkResponse(t *testing.T, client Client, req *http.Request, expectedRequest *http.Request, checkError func(error) bool) {
 	t.Helper()
 
 	res, err := client.Do(req)
-	if err != nil {
-		if expectedRequest == nil {
-			return
-		}
-
+	if (err == nil) && (checkError == nil) {
+	} else if (err != nil) && (checkError != nil) && checkError(err) {
+		return
+	} else if checkError != nil {
+		t.Fatalf("expected error, got wrong error %v instead", err)
+	} else if err != nil {
 		t.Fatalf("could not perform request: %v", err)
 	}
 	defer res.Body.Close()
@@ -210,7 +211,7 @@ func TestDoRequestSuccess(t *testing.T) {
 				"User-Agent":      []string{"test"},
 			},
 			Body: io.NopCloser(bytes.NewBufferString(generatedBody)),
-		})
+		}, nil)
 }
 
 func TestHTTPProxy(t *testing.T) {
@@ -260,7 +261,7 @@ func TestHTTPProxy(t *testing.T) {
 				"X-Forwarded-For": []string{"127.0.0.1"},
 			},
 			Body: io.NopCloser(bytes.NewBufferString(generatedBody)),
-		})
+		}, nil)
 }
 
 func TestClientAuth(t *testing.T) {
@@ -292,7 +293,7 @@ func TestClientAuth(t *testing.T) {
 				"Authorization":   []string{"Basic dXNlcjpwYXNz"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 }
 
 func TestBearerAuth(t *testing.T) {
@@ -324,7 +325,7 @@ func TestBearerAuth(t *testing.T) {
 				"Authorization":   []string{"Bearer aaaaaaaaaaa"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 }
 
 func TestInsecureTLSHttp2(t *testing.T) {
@@ -340,7 +341,6 @@ func TestInsecureTLSHttp2(t *testing.T) {
 	defer cancel()
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		TLSInsecureSkipVerify(true),
 		UserAgent("test"),
 	)
@@ -360,7 +360,7 @@ func TestInsecureTLSHttp2(t *testing.T) {
 				"Accept-Encoding": []string{"gzip"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 }
 
 func TestHttp2Fail(t *testing.T) {
@@ -368,7 +368,6 @@ func TestHttp2Fail(t *testing.T) {
 	defer cancel()
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		UserAgent("test"),
 	)
 	if err != nil {
@@ -379,7 +378,9 @@ func TestHttp2Fail(t *testing.T) {
 		&http.Request{
 			URL: testUrl,
 		},
-		nil)
+		nil, func(err error) bool {
+			return strings.Contains(err.Error(), "tls: unrecognized name")
+		})
 }
 
 func TestRootCAHttp2(t *testing.T) {
@@ -395,7 +396,6 @@ func TestRootCAHttp2(t *testing.T) {
 	defer cancel()
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		TLSRootCAs(serverCertPool),
 		UserAgent("test"),
 	)
@@ -415,7 +415,7 @@ func TestRootCAHttp2(t *testing.T) {
 				"Accept-Encoding": []string{"gzip"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 }
 
 func TestRootCAHttp1(t *testing.T) {
@@ -431,7 +431,6 @@ func TestRootCAHttp1(t *testing.T) {
 	defer cancel()
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		TLSRootCAs(serverCertPool),
 		UserAgent("test"),
 	)
@@ -451,7 +450,7 @@ func TestRootCAHttp1(t *testing.T) {
 				"Accept-Encoding": []string{"gzip"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 }
 
 func TestCAmTLS(t *testing.T) {
@@ -475,7 +474,6 @@ func TestCAmTLS(t *testing.T) {
 	defer cancel()
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		TLSRootCAs(serverCertPool),
 		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			if err := cri.SupportsCertificate(clientTlsCert); err != nil {
@@ -503,7 +501,7 @@ func TestCAmTLS(t *testing.T) {
 				"Accept-Encoding": []string{"gzip"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 }
 
 func TestPKImTLS(t *testing.T) {
@@ -529,7 +527,6 @@ func TestPKImTLS(t *testing.T) {
 	defer cancel()
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		TLSRootCAs(serverCertPool),
 		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			var acceptedCA []byte
@@ -560,7 +557,7 @@ func TestPKImTLS(t *testing.T) {
 				"Accept-Encoding": []string{"gzip"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 }
 
 func TestPKImTLSCustomNames(t *testing.T) {
@@ -605,7 +602,6 @@ func TestPKImTLSCustomNames(t *testing.T) {
 	testUrl.Host = strings.Replace(testUrl.Host, "127.0.0.1", serverURL, 1)
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		TLSRootCAs(serverCertPool),
 		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			if err := cri.SupportsCertificate(clientTlsCert); err != nil {
@@ -633,7 +629,7 @@ func TestPKImTLSCustomNames(t *testing.T) {
 				"Accept-Encoding": []string{"gzip"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 }
 
 func TestHttp1OnHttp2Server(t *testing.T) {
@@ -650,7 +646,7 @@ func TestHttp1OnHttp2Server(t *testing.T) {
 
 	c, err := NewClient(
 		TLSRootCAs(serverCertPool),
-		DisableHttp2(),
+		EnableHttp2(false),
 		UserAgent("test"),
 	)
 	if err != nil {
@@ -669,7 +665,7 @@ func TestHttp1OnHttp2Server(t *testing.T) {
 				"Accept-Encoding": []string{"gzip"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 }
 
 func TestHttp2OnHttp1Server(t *testing.T) {
@@ -685,7 +681,6 @@ func TestHttp2OnHttp1Server(t *testing.T) {
 	defer cancel()
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		TLSRootCAs(serverCertPool),
 		UserAgent("test"),
 	)
@@ -705,7 +700,7 @@ func TestHttp2OnHttp1Server(t *testing.T) {
 				"Accept-Encoding": []string{"gzip"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 }
 
 func TestCAmTLSWithSNI(t *testing.T) {
@@ -773,7 +768,6 @@ func TestCAmTLSWithSNI(t *testing.T) {
 	testUrl.Host = strings.Replace(testUrl.Host, "127.0.0.1", server2URL, 1)
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		TLSRootCAs(server2CertPool),
 		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			if err := cri.SupportsCertificate(clientTlsCert); err != nil {
@@ -802,7 +796,7 @@ func TestCAmTLSWithSNI(t *testing.T) {
 				"Accept-Encoding": []string{"gzip"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 }
 
 func TestDebug(t *testing.T) {
@@ -856,7 +850,7 @@ func TestDebug(t *testing.T) {
 				"Authorization":   []string{"Basic dXNlcjpwYXNz"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 
 	expectedLog := `V\[6\] HTTP request start requestId 1 verb url http:\/\/server\.cloudweb123:\d+
 V\[7\] HTTP request headers requestId 1 ((Authorization Basic <masked>\s*)|(User-Agent test\s*))+
@@ -887,7 +881,6 @@ func TestNotYetValidServerCertificate(t *testing.T) {
 	defer cancel()
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		TLSRootCAs(serverCertPool),
 		UserAgent("test"),
 		TLSTime(func() time.Time {
@@ -902,7 +895,11 @@ func TestNotYetValidServerCertificate(t *testing.T) {
 		&http.Request{
 			URL: testUrl,
 		},
-		nil)
+		nil,
+		func(err error) bool {
+			return strings.Contains(err.Error(), "x509: certificate has expired or is not yet valid: current time") &&
+				strings.Contains(err.Error(), "is before")
+		})
 }
 
 func TestExpiredServerCertificate(t *testing.T) {
@@ -922,7 +919,6 @@ func TestExpiredServerCertificate(t *testing.T) {
 	defer cancel()
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		TLSRootCAs(serverCertPool),
 		UserAgent("test"),
 		TLSTime(func() time.Time {
@@ -937,7 +933,11 @@ func TestExpiredServerCertificate(t *testing.T) {
 		&http.Request{
 			URL: testUrl,
 		},
-		nil)
+		nil,
+		func(err error) bool {
+			return strings.Contains(err.Error(), "x509: certificate has expired or is not yet valid: current time") &&
+				strings.Contains(err.Error(), "is after")
+		})
 }
 
 func TestNotYetValidClientCertificate(t *testing.T) {
@@ -973,7 +973,6 @@ func TestNotYetValidClientCertificate(t *testing.T) {
 	testUrl := testServer.URL
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		TLSRootCAs(serverCertPool),
 		UserAgent("test"),
 		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
@@ -992,7 +991,10 @@ func TestNotYetValidClientCertificate(t *testing.T) {
 		&http.Request{
 			URL: testUrl,
 		},
-		nil)
+		nil,
+		func(err error) bool {
+			return strings.Contains(err.Error(), "remote error: tls: bad certificate")
+		})
 }
 
 func TestExpiredClientCertificate(t *testing.T) {
@@ -1028,7 +1030,6 @@ func TestExpiredClientCertificate(t *testing.T) {
 	testUrl := testServer.URL
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		TLSRootCAs(serverCertPool),
 		UserAgent("test"),
 		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
@@ -1047,7 +1048,10 @@ func TestExpiredClientCertificate(t *testing.T) {
 		&http.Request{
 			URL: testUrl,
 		},
-		nil)
+		nil,
+		func(err error) bool {
+			return strings.Contains(err.Error(), "remote error: tls: bad certificate")
+		})
 }
 
 func saveCertificate(t *testing.T, tempDir string, derBytes []byte, priv *ecdsa.PrivateKey) (string, string) {
@@ -1121,7 +1125,6 @@ func TestDynamicClientCertificate(t *testing.T) {
 	defer cancel()
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		TLSRootCAs(serverCertPool),
 		UserAgent("test"),
 		TLSDynamicClientCertificate(dynamicClientCertSource),
@@ -1142,7 +1145,7 @@ func TestDynamicClientCertificate(t *testing.T) {
 				"Accept-Encoding": []string{"gzip"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 }
 
 func TestDynamicClientCertificateLate(t *testing.T) {
@@ -1178,7 +1181,6 @@ func TestDynamicClientCertificateLate(t *testing.T) {
 	defer cancel()
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		TLSRootCAs(serverCertPool),
 		UserAgent("test"),
 		TLSDynamicClientCertificate(dynamicClientCertSource),
@@ -1191,7 +1193,9 @@ func TestDynamicClientCertificateLate(t *testing.T) {
 		&http.Request{
 			URL: testUrl,
 		},
-		nil)
+		nil, func(err error) bool {
+			return strings.Contains(err.Error(), "no such file or directory")
+		})
 
 	_, _ = saveCertificate(t, tempDir, clientCertBytes, clientPriv)
 
@@ -1207,7 +1211,7 @@ func TestDynamicClientCertificateLate(t *testing.T) {
 				"Accept-Encoding": []string{"gzip"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 }
 
 func TestDynamicClientCertificateRenew(t *testing.T) {
@@ -1229,7 +1233,6 @@ func TestDynamicClientCertificateRenew(t *testing.T) {
 	defer cancel()
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		TLSRootCAs(serverCertPool),
 		UserAgent("test"),
 		TLSDynamicClientCertificate(dynamicClientCertSource),
@@ -1267,7 +1270,7 @@ func TestDynamicClientCertificateRenew(t *testing.T) {
 					"Accept-Encoding": []string{"gzip"},
 					"User-Agent":      []string{"test"},
 				},
-			})
+			}, nil)
 	}
 
 	{
@@ -1300,7 +1303,7 @@ func TestDynamicClientCertificateRenew(t *testing.T) {
 					"Accept-Encoding": []string{"gzip"},
 					"User-Agent":      []string{"test"},
 				},
-			})
+			}, nil)
 	}
 }
 
@@ -1338,7 +1341,6 @@ func TestDynamicRootCA(t *testing.T) {
 	defer cancel()
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		UserAgent("test"),
 		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			if err := cri.SupportsCertificate(clientTlsCert); err != nil {
@@ -1365,7 +1367,7 @@ func TestDynamicRootCA(t *testing.T) {
 				"Accept-Encoding": []string{"gzip"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 }
 
 func TestDynamicRootCALate(t *testing.T) {
@@ -1402,7 +1404,6 @@ func TestDynamicRootCALate(t *testing.T) {
 	defer cancel()
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		UserAgent("test"),
 		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			if err := cri.SupportsCertificate(clientTlsCert); err != nil {
@@ -1421,7 +1422,9 @@ func TestDynamicRootCALate(t *testing.T) {
 		&http.Request{
 			URL: testUrl,
 		},
-		nil)
+		nil, func(err error) bool {
+			return strings.Contains(err.Error(), "no such file or directory")
+		})
 
 	_, _ = saveCertificate(t, tempDir, serverCertBytes, serverPriv)
 
@@ -1437,7 +1440,7 @@ func TestDynamicRootCALate(t *testing.T) {
 				"Accept-Encoding": []string{"gzip"},
 				"User-Agent":      []string{"test"},
 			},
-		})
+		}, nil)
 }
 
 func TestDynamicRootCARenew(t *testing.T) {
@@ -1459,7 +1462,6 @@ func TestDynamicRootCARenew(t *testing.T) {
 	defer cancel()
 
 	c, err := NewClient(
-		Http2Transport(20*time.Second, 30*time.Second),
 		UserAgent("test"),
 		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			if err := cri.SupportsCertificate(clientTlsCert); err != nil {
@@ -1504,7 +1506,7 @@ func TestDynamicRootCARenew(t *testing.T) {
 					"Accept-Encoding": []string{"gzip"},
 					"User-Agent":      []string{"test"},
 				},
-			})
+			}, nil)
 	}
 
 	{
@@ -1539,6 +1541,110 @@ func TestDynamicRootCARenew(t *testing.T) {
 					"Accept-Encoding": []string{"gzip"},
 					"User-Agent":      []string{"test"},
 				},
-			})
+			}, nil)
 	}
+}
+
+func TestCustomClient(t *testing.T) {
+	customTimeout := 103 * time.Second
+
+	c, err := NewClient(
+		ManualClient(&http.Client{
+			Timeout: customTimeout,
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if c.(*http.Client).Timeout != customTimeout {
+		t.Fatalf("expected timeout %v, got %v instead", customTimeout, c.(*http.Client).Timeout)
+	}
+}
+
+func TestCustomTransport(t *testing.T) {
+	serverPriv, serverCertBytes, serverCert := generateCaCertificate(t, nil, nil, boolPtr(false), []string{"127.0.0.1"}, time.Time{}, time.Time{})
+	serverCertPool := x509.NewCertPool()
+	serverCertPool.AddCert(serverCert)
+	serverTlsCert := tls.Certificate{
+		Certificate: [][]byte{serverCertBytes},
+		PrivateKey:  serverPriv,
+	}
+
+	testUrl, cancel := testTlsServerEnv(t, true, []tls.Certificate{serverTlsCert}, nil)
+	defer cancel()
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ForceAttemptHTTP2 = false
+	transport.TLSClientConfig = createDefaultTlsConfig()
+
+	c, err := NewClient(
+		TLSRootCAs(serverCertPool),
+		UserAgent("test"),
+		ManualTransport(transport),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checkResponse(t, c,
+		&http.Request{
+			URL: testUrl,
+		},
+		&http.Request{
+			URL:        testUrl,
+			ProtoMajor: 1,
+			ProtoMinor: 1,
+			Header: http.Header{
+				"Accept-Encoding": []string{"gzip"},
+				"User-Agent":      []string{"test"},
+			},
+		}, nil)
+}
+
+func TestCustomTransportClone(t *testing.T) {
+	serverPriv, serverCertBytes, serverCert := generateCaCertificate(t, nil, nil, boolPtr(false), []string{"127.0.0.1"}, time.Time{}, time.Time{})
+	serverCertPool := x509.NewCertPool()
+	serverCertPool.AddCert(serverCert)
+	serverTlsCert := tls.Certificate{
+		Certificate: [][]byte{serverCertBytes},
+		PrivateKey:  serverPriv,
+	}
+
+	testUrl, cancel := testTlsServerEnv(t, true, []tls.Certificate{serverTlsCert}, nil)
+	defer cancel()
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+
+	_, err := NewClient(
+		EnableHttp2(false),
+		TLSRootCAs(serverCertPool),
+		ManualTransport(transport),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := NewClient(
+		TLSRootCAs(serverCertPool),
+		UserAgent("test"),
+		ManualTransport(transport),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checkResponse(t, c,
+		&http.Request{
+			URL: testUrl,
+		},
+		&http.Request{
+			URL:        testUrl,
+			ProtoMajor: 2,
+			ProtoMinor: 0,
+			Header: http.Header{
+				"Accept-Encoding": []string{"gzip"},
+				"User-Agent":      []string{"test"},
+			},
+		}, nil)
 }

@@ -6,33 +6,31 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"io/fs"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/go418/http-client/dynamic_clientcert"
 	"github.com/go418/http-client/dynamic_rootca"
 	"github.com/go418/http-client/roundtrippers"
-	"golang.org/x/net/http2"
 )
 
-func ManualTransport(transport *http.Transport) Option {
-	return func(state *OptionState) error {
-		if state.H1root != nil {
-			return fmt.Errorf("http.Transport is populated already")
-		}
-		state.H1root = transport.Clone()
-		return nil
+var defaultTransport = createDefaultTransport()
+
+func createDefaultTlsConfig() *tls.Config {
+	return &tls.Config{
+		// Can't use SSLv3 because of POODLE and BEAST
+		// Can't use TLSv1.0 because of POODLE and BEAST using CBC cipher
+		// Can't use TLSv1.1 because of RC4 cipher usage
+		MinVersion: tls.VersionTLS12,
 	}
 }
 
-func ManualDefaultTransport() Option {
-	return ManualTransport(&http.Transport{
+func createDefaultTransport() *http.Transport {
+	return &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
 			Timeout:   30 * time.Second,
@@ -43,39 +41,48 @@ func ManualDefaultTransport() Option {
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
-	})
+		TLSClientConfig:       createDefaultTlsConfig(),
+	}
 }
 
 func ManualClient(client *http.Client) Option {
 	return func(state *OptionState) error {
-		if state.H1root == nil {
-			return fmt.Errorf("no http.Transport found, cannot create a client")
+		if client == nil {
+			client = &http.Client{}
 		}
+
 		if state.Client != nil {
-			return fmt.Errorf("http.Client is populated already")
+			client.Transport = state.Client.Transport
+		} else {
+			state.Dynamic = roundtrippers.NewDynamicTransportTripper()
+
+			state.Dynamic.RegisterTransportCreator(func(_ *http.Transport, _ bool) (*http.Transport, bool, error) {
+				return defaultTransport, false, nil
+			})
+
+			client.Transport = state.Dynamic
 		}
-		client.Transport = state.H1root
+
 		state.Client = client
 		return nil
 	}
 }
 
-func ManualDefaultClient() Option {
-	return ManualClient(&http.Client{})
+func DefaultClient() Option {
+	return ManualClient(nil)
 }
 
-func ManualDynamicClient() Option {
+func ManualTransport(transport *http.Transport) Option {
 	return func(state *OptionState) error {
-		if state.Client == nil {
-			return fmt.Errorf("no client was configured")
+		if state.Dynamic == nil {
+			return fmt.Errorf("no dynamic roundtripper registered")
 		}
-		if h1root, ok := state.Client.Transport.(*http.Transport); !ok {
-			return fmt.Errorf("DynamicClient should be first registered RoundTripper")
-		} else {
-			state.Dynamic = roundtrippers.NewDynamicTransportTripper(h1root)
-			state.Client.Transport = state.Dynamic
-			return nil
-		}
+
+		state.Dynamic.RegisterTransportCreator(func(_ *http.Transport, _ bool) (*http.Transport, bool, error) {
+			return transport, false, nil
+		})
+
+		return nil
 	}
 }
 
@@ -86,48 +93,71 @@ func EnableOption(enable bool, option Option) Option {
 	return option
 }
 
-func Http2Transport(timeout time.Duration, keepAlive time.Duration) Option {
+func EnableHttp2(enabled bool) Option {
 	return func(state *OptionState) error {
-		if h2root, err := http2.ConfigureTransports(state.H1root); err != nil {
-			return err
-		} else {
-			state.H2root = h2root
-			return nil
+		if enabled {
+			state.Dynamic.RegisterTransportCreator(defaultTlsConfig)
 		}
-	}
-}
+		state.Dynamic.RegisterTransportCreator(func(transport *http.Transport, isClone bool) (*http.Transport, bool, error) {
+			if !isClone {
+				transport = transport.Clone()
+			}
+			if enabled {
+				transport.TLSClientConfig.NextProtos = []string{"h2", "http/1.1"}
+				transport.ForceAttemptHTTP2 = true
+			} else {
+				transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
+				transport.ForceAttemptHTTP2 = false
+			}
 
-func DisableHttp2() Option {
-	return func(state *OptionState) error {
-		if state.H2root != nil {
-			return fmt.Errorf("HTTP2 has been enabled explicitly already")
-		}
-		if state.H1root.TLSClientConfig == nil {
-			state.H1root.TLSClientConfig = defaultTlsConfig()
-		}
-		state.H1root.TLSClientConfig.NextProtos = []string{"http/1.1"}
-		state.H1root.ForceAttemptHTTP2 = false
+			return transport, true, nil
+		})
 		return nil
 	}
 }
 
 func DialContext(fn func(ctx context.Context, network, addr string) (net.Conn, error)) Option {
 	return func(state *OptionState) error {
-		state.H1root.DialContext = fn
+		state.Dynamic.RegisterTransportCreator(func(transport *http.Transport, isClone bool) (*http.Transport, bool, error) {
+			if !isClone {
+				transport = transport.Clone()
+			}
+			transport.DialContext = fn
+
+			return transport, true, nil
+		})
 		return nil
 	}
 }
 
 func Proxy(proxy func(*http.Request) (*url.URL, error)) Option {
 	return func(state *OptionState) error {
-		state.H1root.Proxy = proxy
+		state.Dynamic.RegisterTransportCreator(func(transport *http.Transport, isClone bool) (*http.Transport, bool, error) {
+			if !isClone {
+				transport = transport.Clone()
+			}
+			transport.Proxy = proxy
+
+			return transport, true, nil
+		})
 		return nil
 	}
 }
 
 func MaxIdleConnsPerHost(maxIdleConnsPerHost int) Option {
 	return func(state *OptionState) error {
-		state.H1root.MaxConnsPerHost = maxIdleConnsPerHost
+		state.Dynamic.RegisterTransportCreator(func(transport *http.Transport, isClone bool) (*http.Transport, bool, error) {
+			if transport.MaxConnsPerHost == maxIdleConnsPerHost {
+				return transport, isClone, nil
+			}
+
+			if !isClone {
+				transport = transport.Clone()
+			}
+			transport.MaxConnsPerHost = maxIdleConnsPerHost
+
+			return transport, true, nil
+		})
 		return nil
 	}
 }
@@ -139,66 +169,95 @@ func Timeout(timeout time.Duration) Option {
 	}
 }
 
-func defaultTlsConfig() *tls.Config {
-	return &tls.Config{
-		// Can't use SSLv3 because of POODLE and BEAST
-		// Can't use TLSv1.0 because of POODLE and BEAST using CBC cipher
-		// Can't use TLSv1.1 because of RC4 cipher usage
-		MinVersion: tls.VersionTLS12,
+func defaultTlsConfig(transport *http.Transport, isClone bool) (*http.Transport, bool, error) {
+	if transport.TLSClientConfig != nil {
+		return transport, isClone, nil
 	}
+
+	if !isClone {
+		transport = transport.Clone()
+	}
+	transport.TLSClientConfig = createDefaultTlsConfig()
+
+	return transport, true, nil
 }
 
 func TLSInsecureSkipVerify(insecureSkipVerify bool) Option {
 	return func(state *OptionState) error {
-		if state.H1root.TLSClientConfig == nil {
-			state.H1root.TLSClientConfig = defaultTlsConfig()
-		}
-		state.H1root.TLSClientConfig.InsecureSkipVerify = insecureSkipVerify
+		state.Dynamic.RegisterTransportCreator(defaultTlsConfig)
+		state.Dynamic.RegisterTransportCreator(func(transport *http.Transport, isClone bool) (*http.Transport, bool, error) {
+			if transport.TLSClientConfig.InsecureSkipVerify == insecureSkipVerify {
+				return transport, isClone, nil
+			}
+
+			if !isClone {
+				transport = transport.Clone()
+			}
+			transport.TLSClientConfig.InsecureSkipVerify = insecureSkipVerify
+
+			return transport, true, nil
+		})
 		return nil
 	}
 }
 
 func TLSRootCAs(rootCAs *x509.CertPool) Option {
 	return func(state *OptionState) error {
-		if state.H1root.TLSClientConfig == nil {
-			state.H1root.TLSClientConfig = defaultTlsConfig()
-		}
-		state.H1root.TLSClientConfig.RootCAs = rootCAs
+		state.Dynamic.RegisterTransportCreator(defaultTlsConfig)
+		state.Dynamic.RegisterTransportCreator(func(transport *http.Transport, isClone bool) (*http.Transport, bool, error) {
+			if transport.TLSClientConfig.RootCAs == rootCAs {
+				return transport, isClone, nil
+			}
+
+			if !isClone {
+				transport = transport.Clone()
+			}
+			transport.TLSClientConfig.RootCAs = rootCAs
+
+			return transport, true, nil
+		})
 		return nil
 	}
 }
 
 func TLSClientCertificate(fn func(*tls.CertificateRequestInfo) (*tls.Certificate, error)) Option {
 	return func(state *OptionState) error {
-		if state.H1root.TLSClientConfig == nil {
-			state.H1root.TLSClientConfig = defaultTlsConfig()
-		}
-		if state.H1root.TLSClientConfig.GetClientCertificate != nil {
-			return fmt.Errorf("GetClientCertificate has been set explicitly already")
-		}
-		state.H1root.TLSClientConfig.GetClientCertificate = fn
+		state.Dynamic.RegisterTransportCreator(defaultTlsConfig)
+		state.Dynamic.RegisterTransportCreator(func(transport *http.Transport, isClone bool) (*http.Transport, bool, error) {
+			if transport.TLSClientConfig.GetClientCertificate != nil {
+				return nil, false, fmt.Errorf("GetClientCertificate has been set explicitly already")
+			}
+
+			if !isClone {
+				transport = transport.Clone()
+			}
+			transport.TLSClientConfig.GetClientCertificate = fn
+
+			return transport, true, nil
+		})
 		return nil
 	}
-}
-
-func filesCannotBeDifferent(file1 fs.FileInfo, file2 fs.FileInfo) bool {
-	return os.SameFile(file1, file2) &&
-		(file1.ModTime() == file2.ModTime()) &&
-		(file1.Mode() == file2.Mode()) &&
-		(file1.Size() == file2.Size())
 }
 
 type DynamicClientCertificateSource func(state *OptionState) dynamic_clientcert.DynamicClientCertificate
 
 func TLSDynamicClientCertificate(fn DynamicClientCertificateSource) Option {
 	return func(state *OptionState) error {
-		if state.H1root.TLSClientConfig == nil {
-			state.H1root.TLSClientConfig = defaultTlsConfig()
-		}
-		if state.H1root.TLSClientConfig.GetClientCertificate != nil {
-			return fmt.Errorf("GetClientCertificate has been set explicitly already")
-		}
-		state.H1root.TLSClientConfig.GetClientCertificate = fn(state).GetClientCertificate
+		state.Dynamic.RegisterTransportCreator(defaultTlsConfig)
+		state.Dynamic.RegisterTransportCreator(func(transport *http.Transport, isClone bool) (*http.Transport, bool, error) {
+			if transport.TLSClientConfig.GetClientCertificate != nil {
+				return nil, false, fmt.Errorf("GetClientCertificate has been set explicitly already")
+			}
+
+			if !isClone {
+				transport = transport.Clone()
+			}
+
+			dynamicClientCertificateSource := fn(state)
+			transport.TLSClientConfig.GetClientCertificate = dynamicClientCertificateSource.GetClientCertificate
+
+			return transport, true, nil
+		})
 		return nil
 	}
 }
@@ -208,45 +267,22 @@ func StartDynamicFileClientCertificateSource(ctx context.Context, log logr.Logge
 	var doneCh chan struct{}
 
 	return DynamicClientCertificateSource(func(state *OptionState) dynamic_clientcert.DynamicClientCertificate {
-			var prevCertStat fs.FileInfo
-			var prevKeyStat fs.FileInfo
-
 			doneCh = make(chan struct{})
 
 			dynamicClientCertificate := dynamic_clientcert.NewDynamicClientCertificate(
 				ctx,
 				log,
 				func(ctx context.Context, existing *tls.Certificate) (*tls.Certificate, error) {
-					certStat, err := os.Stat(certFile)
-					if err != nil {
-						return nil, fmt.Errorf("error checking client certificate file: %v", err)
-					}
-
-					keyStat, err := os.Stat(keyFile)
-					if err != nil {
-						return nil, fmt.Errorf("error checking client key file: %v", err)
-					}
-
-					if filesCannotBeDifferent(certStat, prevCertStat) && filesCannotBeDifferent(keyStat, prevKeyStat) {
-						log.V(9).Info("detected no change in files", "certFile", certFile, "keyFile", keyFile)
-						// Files have not changed, re-return existing certificate
-						return existing, nil
-					}
-					log.V(8).Info("change detected in files", "certFile", certFile, "keyFile", keyFile)
+					log.V(8).Info("reloading client certificate", "certFile", certFile, "keyFile", keyFile)
 
 					certificate, err := tls.LoadX509KeyPair(certFile, keyFile)
 					if err != nil {
 						return nil, fmt.Errorf("could not load X509 key pair: %v", err)
 					}
 
-					// only update file stats here, since file-creation/ write could
-					// be in progress, this will cause an error, resulting in a retry
-					prevCertStat = certStat
-					prevKeyStat = keyStat
-
 					return &certificate, nil
 				},
-				state.H1root.DialContext,
+				state.Dynamic.CloseIdleConnections,
 			)
 
 			go func() {
@@ -267,10 +303,15 @@ func StartDynamicFileClientCertificateSource(ctx context.Context, log logr.Logge
 
 func TLSTime(time func() time.Time) Option {
 	return func(state *OptionState) error {
-		if state.H1root.TLSClientConfig == nil {
-			state.H1root.TLSClientConfig = defaultTlsConfig()
-		}
-		state.H1root.TLSClientConfig.Time = time
+		state.Dynamic.RegisterTransportCreator(defaultTlsConfig)
+		state.Dynamic.RegisterTransportCreator(func(transport *http.Transport, isClone bool) (*http.Transport, bool, error) {
+			if !isClone {
+				transport = transport.Clone()
+			}
+			transport.TLSClientConfig.Time = time
+
+			return transport, true, nil
+		})
 		return nil
 	}
 }
@@ -280,6 +321,7 @@ func TLSEnableSni() Option {
 		if state.Dynamic == nil {
 			return fmt.Errorf("no dynamic roundtripper registered")
 		}
+
 		state.Dynamic.RegisterTransportUpdater(func(req *http.Request, transport *http.Transport, isClone bool) (*http.Transport, error) {
 			// check if TLS is enabled
 			if transport.TLSClientConfig == nil {
@@ -313,9 +355,7 @@ type DynamicRootCAsSource func(state *OptionState) dynamic_rootca.DynamicRootCAs
 
 func TLSDynamicRootCAs(fn DynamicRootCAsSource) Option {
 	return func(state *OptionState) error {
-		if state.H1root.TLSClientConfig == nil {
-			state.H1root.TLSClientConfig = defaultTlsConfig()
-		}
+		state.Dynamic.RegisterTransportCreator(defaultTlsConfig)
 
 		if state.Dynamic == nil {
 			return fmt.Errorf("no dynamic roundtripper registered")
@@ -323,7 +363,7 @@ func TLSDynamicRootCAs(fn DynamicRootCAsSource) Option {
 
 		dynamicRootCAsSource := fn(state)
 		state.Dynamic.RegisterTransportUpdater(func(req *http.Request, transport *http.Transport, isClone bool) (*http.Transport, error) {
-			if transport.TLSClientConfig == nil {
+			if transport.TLSClientConfig == nil { // TLS disabled
 				return transport, nil
 			}
 
@@ -373,25 +413,13 @@ func StartDynamicFileRootCAsSource(ctx context.Context, log logr.Logger, rootCAF
 	var doneCh chan struct{}
 
 	return DynamicRootCAsSource(func(state *OptionState) dynamic_rootca.DynamicRootCAs {
-			var prevRootCAStat fs.FileInfo
-
 			doneCh = make(chan struct{})
 
 			dynamicClientCertificate := dynamic_rootca.NewDynamicClientCertificate(
 				ctx,
 				log,
 				func(ctx context.Context, existing *x509.CertPool) (*x509.CertPool, error) {
-					rootCAStat, err := os.Stat(rootCAFile)
-					if err != nil {
-						return nil, fmt.Errorf("error checking root CA file: %v", err)
-					}
-
-					if filesCannotBeDifferent(rootCAStat, prevRootCAStat) {
-						log.V(9).Info("detected no change in files", "rootCAFile", rootCAFile)
-						// Files have not changed, re-return existing certificate
-						return existing, nil
-					}
-					log.V(8).Info("change detected in files", "rootCAFile", rootCAFile)
+					log.V(8).Info("reloading root CA file", "rootCAFile", rootCAFile)
 
 					certPool := x509.NewCertPool()
 
@@ -402,10 +430,6 @@ func StartDynamicFileRootCAsSource(ctx context.Context, log logr.Logger, rootCAF
 					if ok := certPool.AppendCertsFromPEM(der); !ok {
 						return nil, createErrorParsingCAData(der)
 					}
-
-					// only update file stat here, since file-creation/ write could
-					// be in progress, this will cause an error, resulting in a retry
-					prevRootCAStat = rootCAStat
 
 					return certPool, nil
 				},
@@ -436,10 +460,18 @@ func Debug(log logr.Logger) Option {
 
 func DisableCompression(disable bool) Option {
 	return func(state *OptionState) error {
-		state.H1root.DisableCompression = disable
-		if state.H2root != nil {
-			state.H2root.DisableCompression = disable
-		}
+		state.Dynamic.RegisterTransportCreator(func(transport *http.Transport, isClone bool) (*http.Transport, bool, error) {
+			if transport.DisableCompression == disable {
+				return transport, isClone, nil
+			}
+
+			if !isClone {
+				transport = transport.Clone()
+			}
+			transport.DisableCompression = disable
+
+			return transport, true, nil
+		})
 		return nil
 	}
 }

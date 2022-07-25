@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/go418/http-client/roundtrippers"
-	"golang.org/x/net/http2"
 )
 
 type Client interface {
@@ -13,8 +12,6 @@ type Client interface {
 
 type OptionState struct {
 	Dynamic *roundtrippers.DynamicTransportTripper
-	H1root  *http.Transport
-	H2root  *http2.Transport
 	Client  *http.Client
 }
 
@@ -43,8 +40,6 @@ func NewClient(options ...Option) (Client, error) {
 	return builder.
 		Add(EnableOption(len(options) > 0, ManualCloneRequest())).
 		Add(options...).
-		Add(ManualDynamicClient()).
-		Add(ManualDefaultClient()).
-		Add(ManualDefaultTransport()).
+		Add(DefaultClient()).
 		Complete()
 }

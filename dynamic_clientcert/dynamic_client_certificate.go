@@ -29,9 +29,9 @@ type dynamicClientCert struct {
 	log            logr.Logger
 	NewCertificate NewCertificate
 
-	certificate   atomic.Value
-	certificateMu sync.Mutex
-	connDialer    *dialer
+	certificate          atomic.Value
+	certificateMu        sync.Mutex
+	closeIdleConnections func()
 }
 
 type DynamicClientCertificate interface {
@@ -49,25 +49,16 @@ type DynamicClientCertificate interface {
 // Dynamic client cert: use file/ secret watch and acceptable server CAs to determine
 // if certificate is still valid and fetch a new version of the cerificate if required.
 // A certificate that is about to expire will cause the connection to be closed.
-func NewDynamicClientCertificate(ctx context.Context, log logr.Logger, newCertificate NewCertificate, dialContextFunc DialContextFunc) DynamicClientCertificate {
+func NewDynamicClientCertificate(ctx context.Context, log logr.Logger, newCertificate NewCertificate, closeIdleConnections func()) DynamicClientCertificate {
 	return &dynamicClientCert{
-		log:            log,
-		NewCertificate: newCertificate,
-
-		connDialer: NewDialer(dialContextFunc),
+		log:                  log,
+		NewCertificate:       newCertificate,
+		closeIdleConnections: closeIdleConnections,
 	}
 }
 
 // updateCertificate fetches a new certificate and rotates connections if needed
 func (c *dynamicClientCert) renewCertificate(ctx context.Context, current *decodedCertificate) (*decodedCertificate, error) {
-	shouldReset := false
-	defer func() {
-		// The first certificate requested is not a rotation that is worth closing connections for
-		if shouldReset {
-			c.connDialer.CloseAll()
-		}
-	}()
-
 	c.certificateMu.Lock() // Lock to make sure we are not doing double work (only one renew at the time!)
 	defer c.certificateMu.Unlock()
 
@@ -123,8 +114,8 @@ func (c *dynamicClientCert) renewCertificate(ctx context.Context, current *decod
 
 	c.certificate.Store(decoded)
 
-	// reset all connections that are open (on first run, no connections should be open)
-	shouldReset = true
+	// reset all idle connections
+	c.closeIdleConnections()
 
 	return decoded, nil
 }
