@@ -143,7 +143,7 @@ func testTlsServerEnv(t *testing.T, enableHttp2 bool, serverCerts []tls.Certific
 	return testServer.URL, cancel
 }
 
-func checkResponse(t *testing.T, client Client, req *http.Request, expectedRequest *http.Request, checkError func(error) bool) {
+func checkResponse(t *testing.T, client *http.Client, req *http.Request, expectedRequest *http.Request, checkError func(error) bool) {
 	t.Helper()
 
 	res, err := client.Do(req)
@@ -1557,8 +1557,8 @@ func TestCustomClient(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if c.(*http.Client).Timeout != customTimeout {
-		t.Fatalf("expected timeout %v, got %v instead", customTimeout, c.(*http.Client).Timeout)
+	if c.Timeout != customTimeout {
+		t.Fatalf("expected timeout %v, got %v instead", customTimeout, c.Timeout)
 	}
 }
 
