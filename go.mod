@@ -1,4 +1,4 @@
-module github.com/go418/http-client
+module github.com/go418/http_client
 
 go 1.18
 

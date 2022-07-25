@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/go418/http-client/dynamic_clientcert"
-	"github.com/go418/http-client/dynamic_rootca"
-	"github.com/go418/http-client/roundtrippers"
+	"github.com/go418/http_client/dynamic_clientcert"
+	"github.com/go418/http_client/dynamic_rootca"
+	"github.com/go418/http_client/roundtrippers"
 )
 
 var defaultTransport = createDefaultTransport()

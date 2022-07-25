@@ -1,4 +1,4 @@
-# http-client
+# http_client
 
 This libary provides a "Golang Functional Options Pattern" implementation for the "net/http" client.
 

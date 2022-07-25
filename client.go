@@ -3,7 +3,7 @@ package http_client
 import (
 	"net/http"
 
-	"github.com/go418/http-client/roundtrippers"
+	"github.com/go418/http_client/roundtrippers"
 )
 
 type Client interface {

@@ -28,8 +28,8 @@ import (
 	resolver "github.com/aojea/mem-resolver"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/testr"
-	"github.com/go418/http-client/dynamic_clientcert"
-	"github.com/go418/http-client/dynamic_rootca"
+	"github.com/go418/http_client/dynamic_clientcert"
+	"github.com/go418/http_client/dynamic_rootca"
 	"github.com/tonglil/buflogr"
 )
 
