@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/big"
 	"net"
 	"net/http"
@@ -856,6 +857,75 @@ func TestDebug(t *testing.T) {
 V\[7\] HTTP request headers requestId 1 ((Authorization Basic <masked>\s*)|(User-Agent test\s*))+
 V\[8\] HTTP trace: DNS lookup requestId 1 host server.cloudweb123 resolved \[{127.0.0.1 }\]
 V\[8\] HTTP trace: dial requestId 1 network tcp key (.*) status success
+V\[7\] HTTP statistics requestId 1 DNS lookup \(ms\) \d+ dial \(ms\) \d+ TLS handshake \(ms\) \d+ ServerProcessing \(ms\) \d+ duration \(ms\) \d+
+V\[7\] HTTP response headers requestId 1 (.*)`
+
+	if ok, err := regexp.Match(expectedLog, buf.Bytes()); !ok || err != nil {
+		t.Errorf("expected to log '%s', got '%s' instead", expectedLog, buf.String())
+	}
+}
+
+func TestDebugBody(t *testing.T) {
+	serverURL := "server.cloudweb123"
+
+	testServer := &Server{
+		Config: &http.Server{Handler: infoWriter()},
+		TLS:    false,
+	}
+	defer testServer.Start()()
+	testUrl := testServer.URL
+	testUrl.Host = strings.Replace(testUrl.Host, "127.0.0.1", serverURL, 1)
+
+	var buf bytes.Buffer
+	var log logr.Logger = buflogr.NewWithBuffer(&buf)
+
+	dialer := net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+		Resolver: resolver.NewMemoryResolver(&resolver.MemResolver{
+			LookupIP: func(ctx context.Context, network, host string) ([]net.IP, error) {
+				// fqdn appends a dot
+				if serverURL == strings.TrimSuffix(host, ".") {
+					return []net.IP{net.ParseIP("127.0.0.1")}, nil
+				}
+				return net.DefaultResolver.LookupIP(ctx, network, host)
+			},
+		}),
+	}
+
+	c, err := NewClient(
+		BasicAuth("user", "pass"),
+		UserAgent("test"),
+		DialContext(dialer.DialContext),
+		Debug(log),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checkResponse(t, c,
+		&http.Request{
+			URL:  testUrl,
+			Body: ioutil.NopCloser(bytes.NewBufferString("test")),
+		},
+		&http.Request{
+			URL:              testUrl,
+			ProtoMajor:       1,
+			ProtoMinor:       1,
+			TransferEncoding: []string{"chunked"},
+			Header: http.Header{
+				"Accept-Encoding": []string{"gzip"},
+				"Authorization":   []string{"Basic dXNlcjpwYXNz"},
+				"User-Agent":      []string{"test"},
+			},
+			Body: ioutil.NopCloser(bytes.NewBufferString("test")),
+		}, nil)
+
+	expectedLog := `V\[6\] HTTP request start requestId 1 verb url http:\/\/server\.cloudweb123:\d+
+V\[7\] HTTP request headers requestId 1 ((Authorization Basic <masked>\s*)|(User-Agent test\s*))+
+V\[8\] HTTP trace: DNS lookup requestId 1 host server.cloudweb123 resolved \[{127.0.0.1 }\]
+V\[8\] HTTP trace: dial requestId 1 network tcp key (.*) status success
+V\[9\] HTTP request body requestId 1 body test
 V\[7\] HTTP statistics requestId 1 DNS lookup \(ms\) \d+ dial \(ms\) \d+ TLS handshake \(ms\) \d+ ServerProcessing \(ms\) \d+ duration \(ms\) \d+
 V\[7\] HTTP response headers requestId 1 (.*)`
 

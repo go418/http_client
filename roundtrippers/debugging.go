@@ -2,6 +2,7 @@ package roundtrippers
 
 import (
 	"crypto/tls"
+	"io"
 	"net/http"
 	"net/http/httptrace"
 	"strings"
@@ -117,6 +118,16 @@ func (rt *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 	)
 	rt.log.V(7).Info("HTTP request headers", extractHeaders(requestId, reqInfo.RequestHeaders)...)
 
+	if rt.log.V(9).Enabled() {
+		req.Body = newBodyLogTeeReader(
+			req.Body,
+			100,
+			func(b []byte) {
+				rt.log.V(9).Info("HTTP request body", "requestId", requestId, "body", string(b))
+			},
+		)
+	}
+
 	startTime := time.Now()
 
 	if rt.log.V(7).Enabled() {
@@ -221,7 +232,58 @@ func (rt *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 
 	rt.log.V(7).Info("HTTP response headers", extractHeaders(requestId, reqInfo.ResponseHeaders)...)
 
+	if rt.log.V(9).Enabled() {
+		response.Body = newBodyLogTeeReader(
+			response.Body,
+			100,
+			func(b []byte) {
+				rt.log.V(9).Info("HTTP response body", "requestId", requestId, "body", string(b))
+			},
+		)
+	}
+
 	return response, err
+}
+
+func newBodyLogTeeReader(body io.ReadCloser, flushlimit int, log func(b []byte)) io.ReadCloser {
+	if body == nil {
+		return nil
+	}
+
+	return &bodyLogTeeReader{
+		log:        log,
+		flushlimit: flushlimit,
+		body:       body,
+	}
+}
+
+type bodyLogTeeReader struct {
+	log        func(b []byte)
+	buffer     []byte
+	flushlimit int
+	body       io.ReadCloser
+}
+
+func (w *bodyLogTeeReader) flush() {
+	w.log(w.buffer)
+	w.buffer = w.buffer[:0]
+}
+
+func (w *bodyLogTeeReader) Close() error {
+	w.flush()
+	return w.body.Close()
+}
+
+func (w *bodyLogTeeReader) Read(b []byte) (int, error) {
+	n, err := w.body.Read(b)
+	if err != nil {
+		return n, err
+	}
+	w.buffer = append(w.buffer, b[:n]...)
+	if len(w.buffer) >= w.flushlimit {
+		w.flush()
+	}
+	return n, err
 }
 
 func (rt *debuggingRoundTripper) WrappedRoundTripper() http.RoundTripper {
