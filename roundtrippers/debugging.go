@@ -105,6 +105,8 @@ func maskValue(key string, value string) string {
 	return value
 }
 
+var DebugBodyChunkLength = 100
+
 func (rt *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	reqInfo := newRequestInfo(req)
 
@@ -121,7 +123,7 @@ func (rt *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 	if rt.log.V(9).Enabled() {
 		req.Body = newBodyLogTeeReader(
 			req.Body,
-			100,
+			DebugBodyChunkLength,
 			func(b []byte) {
 				rt.log.V(9).Info("HTTP request body", "requestId", requestId, "body", string(b))
 			},
@@ -235,7 +237,7 @@ func (rt *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 	if rt.log.V(9).Enabled() {
 		response.Body = newBodyLogTeeReader(
 			response.Body,
-			100,
+			DebugBodyChunkLength,
 			func(b []byte) {
 				rt.log.V(9).Info("HTTP response body", "requestId", requestId, "body", string(b))
 			},
