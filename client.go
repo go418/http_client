@@ -22,15 +22,19 @@ func (cb ClientBuilder) Add(options ...Option) ClientBuilder {
 func (cb ClientBuilder) Complete() (*http.Client, error) {
 	state := OptionState{}
 
-	if err := DefaultClient()(&state); err != nil {
-		return nil, err
-	}
+	state.Dynamic = roundtrippers.NewDynamicTransportTripper()
+	state.Client = &http.Client{Transport: state.Dynamic}
 
-	// reverse order of options (this way, the first option is hit first by a request)
+	// reverse order of options (this way, the first transport is hit first by a request)
 	for i := len(cb) - 1; i >= 0; i-- {
 		if err := cb[i](&state); err != nil {
 			return nil, err
 		}
+	}
+
+	// Register a default transport, in case no explicit transport was provided
+	if err := DefaultTransport()(&state); err != nil {
+		return nil, err
 	}
 
 	if len(cb) > 0 {

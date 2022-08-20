@@ -1,4 +1,4 @@
-package http_client
+package http_client_test
 
 import (
 	"bytes"
@@ -29,6 +29,7 @@ import (
 	resolver "github.com/aojea/mem-resolver"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/testr"
+	"github.com/go418/http_client"
 	"github.com/go418/http_client/dynamic_clientcert"
 	"github.com/go418/http_client/dynamic_rootca"
 	"github.com/tonglil/buflogr"
@@ -133,7 +134,7 @@ func infoWriter() http.HandlerFunc {
 }
 
 func testTlsServerEnv(t *testing.T, enableHttp2 bool, serverCerts []tls.Certificate, clientCAs *x509.CertPool) (*url.URL, func()) {
-	testServer := &Server{
+	testServer := &http_client.Server{
 		Config:       &http.Server{Handler: infoWriter()},
 		TLS:          true,
 		EnableHTTP2:  enableHttp2,
@@ -183,15 +184,15 @@ func checkResponse(t *testing.T, client *http.Client, req *http.Request, expecte
 
 func TestDoRequestSuccess(t *testing.T) {
 	generatedBody := "dummy data"
-	testServer := &Server{
+	testServer := &http_client.Server{
 		Config: &http.Server{Handler: infoWriter()},
 		TLS:    false,
 	}
 	defer testServer.Start()()
 	testUrl := testServer.URL
 
-	c, err := NewClient(
-		UserAgent("test"),
+	c, err := http_client.NewClient(
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +218,7 @@ func TestDoRequestSuccess(t *testing.T) {
 
 func TestHTTPProxy(t *testing.T) {
 	generatedBody := "dummy data"
-	testServer := &Server{
+	testServer := &http_client.Server{
 		Config: &http.Server{Handler: infoWriter()},
 		TLS:    false,
 	}
@@ -238,9 +239,9 @@ func TestHTTPProxy(t *testing.T) {
 		t.Fatalf("Failed to parse test proxy server url: %v", err)
 	}
 
-	c, err := NewClient(
-		Proxy(http.ProxyURL(u)),
-		UserAgent("test"),
+	c, err := http_client.NewClient(
+		http_client.Proxy(http.ProxyURL(u)),
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
@@ -266,16 +267,16 @@ func TestHTTPProxy(t *testing.T) {
 }
 
 func TestClientAuth(t *testing.T) {
-	testServer := &Server{
+	testServer := &http_client.Server{
 		Config: &http.Server{Handler: infoWriter()},
 		TLS:    false,
 	}
 	defer testServer.Start()()
 	testUrl := testServer.URL
 
-	c, err := NewClient(
-		BasicAuth("user", "pass"),
-		UserAgent("test"),
+	c, err := http_client.NewClient(
+		http_client.BasicAuth("user", "pass"),
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -298,16 +299,16 @@ func TestClientAuth(t *testing.T) {
 }
 
 func TestBearerAuth(t *testing.T) {
-	testServer := &Server{
+	testServer := &http_client.Server{
 		Config: &http.Server{Handler: infoWriter()},
 		TLS:    false,
 	}
 	defer testServer.Start()()
 	testUrl := testServer.URL
 
-	c, err := NewClient(
-		BearerAuth("aaaaaaaaaaa"),
-		UserAgent("test"),
+	c, err := http_client.NewClient(
+		http_client.BearerAuth("aaaaaaaaaaa"),
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -341,9 +342,9 @@ func TestInsecureTLSHttp2(t *testing.T) {
 	testUrl, cancel := testTlsServerEnv(t, true, []tls.Certificate{serverTlsCert}, nil)
 	defer cancel()
 
-	c, err := NewClient(
-		TLSInsecureSkipVerify(true),
-		UserAgent("test"),
+	c, err := http_client.NewClient(
+		http_client.TLSInsecureSkipVerify(true),
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -368,8 +369,8 @@ func TestHttp2Fail(t *testing.T) {
 	testUrl, cancel := testTlsServerEnv(t, true, nil, nil)
 	defer cancel()
 
-	c, err := NewClient(
-		UserAgent("test"),
+	c, err := http_client.NewClient(
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -396,9 +397,9 @@ func TestRootCAHttp2(t *testing.T) {
 	testUrl, cancel := testTlsServerEnv(t, true, []tls.Certificate{serverTlsCert}, nil)
 	defer cancel()
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		UserAgent("test"),
+	c, err := http_client.NewClient(
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -431,9 +432,9 @@ func TestRootCAHttp1(t *testing.T) {
 	testUrl, cancel := testTlsServerEnv(t, false, []tls.Certificate{serverTlsCert}, nil)
 	defer cancel()
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		UserAgent("test"),
+	c, err := http_client.NewClient(
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -474,9 +475,9 @@ func TestCAmTLS(t *testing.T) {
 	testUrl, cancel := testTlsServerEnv(t, true, []tls.Certificate{serverTlsCert}, clientCertPool)
 	defer cancel()
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+	c, err := http_client.NewClient(
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			if err := cri.SupportsCertificate(clientTlsCert); err != nil {
 				return nil, fmt.Errorf("cert is not accepted: %v", err)
 			}
@@ -484,7 +485,7 @@ func TestCAmTLS(t *testing.T) {
 			return clientTlsCert, nil
 
 		}),
-		UserAgent("test"),
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -527,9 +528,9 @@ func TestPKImTLS(t *testing.T) {
 	testUrl, cancel := testTlsServerEnv(t, true, []tls.Certificate{serverTlsCert}, clientCertPool)
 	defer cancel()
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+	c, err := http_client.NewClient(
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			var acceptedCA []byte
 			for _, acceptedCA = range cri.AcceptableCAs {
 				if string(acceptedCA) != string(clientCert.RawIssuer) {
@@ -540,7 +541,7 @@ func TestPKImTLS(t *testing.T) {
 
 			return nil, fmt.Errorf("cert is not accepted, expected '%s', got '%s'", string(clientCert.RawIssuer), string(cri.AcceptableCAs[0]))
 		}),
-		UserAgent("test"),
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -602,17 +603,17 @@ func TestPKImTLSCustomNames(t *testing.T) {
 
 	testUrl.Host = strings.Replace(testUrl.Host, "127.0.0.1", serverURL, 1)
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+	c, err := http_client.NewClient(
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			if err := cri.SupportsCertificate(clientTlsCert); err != nil {
 				return nil, fmt.Errorf("cert is not accepted: %v", err)
 			}
 
 			return clientTlsCert, nil
 		}),
-		DialContext(dialer.DialContext),
-		UserAgent("test"),
+		http_client.DialContext(dialer.DialContext),
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -645,10 +646,10 @@ func TestHttp1OnHttp2Server(t *testing.T) {
 	testUrl, cancel := testTlsServerEnv(t, true, []tls.Certificate{serverTlsCert}, nil)
 	defer cancel()
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		EnableHttp2(false),
-		UserAgent("test"),
+	c, err := http_client.NewClient(
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.EnableHttp2(false),
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -681,9 +682,9 @@ func TestHttp2OnHttp1Server(t *testing.T) {
 	testUrl, cancel := testTlsServerEnv(t, false, []tls.Certificate{serverTlsCert}, nil)
 	defer cancel()
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		UserAgent("test"),
+	c, err := http_client.NewClient(
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -757,7 +758,7 @@ func TestCAmTLSWithSNI(t *testing.T) {
 		PrivateKey:  clientPriv,
 	}
 
-	testServer := &Server{
+	testServer := &http_client.Server{
 		Config:         &http.Server{Handler: infoWriter()},
 		TLS:            true,
 		EnableHTTP2:    true,
@@ -768,18 +769,18 @@ func TestCAmTLSWithSNI(t *testing.T) {
 	testUrl := testServer.URL
 	testUrl.Host = strings.Replace(testUrl.Host, "127.0.0.1", server2URL, 1)
 
-	c, err := NewClient(
-		TLSRootCAs(server2CertPool),
-		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+	c, err := http_client.NewClient(
+		http_client.TLSRootCAs(server2CertPool),
+		http_client.TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			if err := cri.SupportsCertificate(clientTlsCert); err != nil {
 				return nil, fmt.Errorf("cert is not accepted: %v", err)
 			}
 
 			return clientTlsCert, nil
 		}),
-		DialContext(dialer.DialContext),
-		TLSEnableSni(),
-		UserAgent("test"),
+		http_client.DialContext(dialer.DialContext),
+		http_client.TLSEnableSni(),
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -803,7 +804,7 @@ func TestCAmTLSWithSNI(t *testing.T) {
 func TestDebug(t *testing.T) {
 	serverURL := "server.cloudweb123"
 
-	testServer := &Server{
+	testServer := &http_client.Server{
 		Config: &http.Server{Handler: infoWriter()},
 		TLS:    false,
 	}
@@ -828,11 +829,11 @@ func TestDebug(t *testing.T) {
 		}),
 	}
 
-	c, err := NewClient(
-		BasicAuth("user", "pass"),
-		UserAgent("test"),
-		DialContext(dialer.DialContext),
-		Debug(log),
+	c, err := http_client.NewClient(
+		http_client.BasicAuth("user", "pass"),
+		http_client.UserAgent("test"),
+		http_client.DialContext(dialer.DialContext),
+		http_client.Debug(log),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -840,9 +841,11 @@ func TestDebug(t *testing.T) {
 
 	checkResponse(t, c,
 		&http.Request{
-			URL: testUrl,
+			Method: http.MethodGet,
+			URL:    testUrl,
 		},
 		&http.Request{
+			Method:     http.MethodGet,
 			URL:        testUrl,
 			ProtoMajor: 1,
 			ProtoMinor: 1,
@@ -868,7 +871,7 @@ V\[7\] HTTP response headers requestId 1 (.*)`
 func TestDebugBody(t *testing.T) {
 	serverURL := "server.cloudweb123"
 
-	testServer := &Server{
+	testServer := &http_client.Server{
 		Config: &http.Server{Handler: infoWriter()},
 		TLS:    false,
 	}
@@ -893,11 +896,11 @@ func TestDebugBody(t *testing.T) {
 		}),
 	}
 
-	c, err := NewClient(
-		BasicAuth("user", "pass"),
-		UserAgent("test"),
-		DialContext(dialer.DialContext),
-		Debug(log),
+	c, err := http_client.NewClient(
+		http_client.BasicAuth("user", "pass"),
+		http_client.UserAgent("test"),
+		http_client.DialContext(dialer.DialContext),
+		http_client.Debug(log),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -905,10 +908,12 @@ func TestDebugBody(t *testing.T) {
 
 	checkResponse(t, c,
 		&http.Request{
-			URL:  testUrl,
-			Body: ioutil.NopCloser(bytes.NewBufferString("test")),
+			Method: http.MethodPost,
+			URL:    testUrl,
+			Body:   ioutil.NopCloser(bytes.NewBufferString("test")),
 		},
 		&http.Request{
+			Method:           http.MethodPost,
 			URL:              testUrl,
 			ProtoMajor:       1,
 			ProtoMinor:       1,
@@ -950,10 +955,10 @@ func TestNotYetValidServerCertificate(t *testing.T) {
 	testUrl, cancel := testTlsServerEnv(t, false, []tls.Certificate{serverTlsCert}, nil)
 	defer cancel()
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		UserAgent("test"),
-		TLSTime(func() time.Time {
+	c, err := http_client.NewClient(
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.UserAgent("test"),
+		http_client.TLSTime(func() time.Time {
 			return clientTime
 		}),
 	)
@@ -988,10 +993,10 @@ func TestExpiredServerCertificate(t *testing.T) {
 	testUrl, cancel := testTlsServerEnv(t, false, []tls.Certificate{serverTlsCert}, nil)
 	defer cancel()
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		UserAgent("test"),
-		TLSTime(func() time.Time {
+	c, err := http_client.NewClient(
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.UserAgent("test"),
+		http_client.TLSTime(func() time.Time {
 			return clientTime
 		}),
 	)
@@ -1031,7 +1036,7 @@ func TestNotYetValidClientCertificate(t *testing.T) {
 		PrivateKey:  clientPriv,
 	}
 
-	testServer := &Server{
+	testServer := &http_client.Server{
 		Config:       &http.Server{Handler: infoWriter()},
 		TLS:          true,
 		EnableHTTP2:  false,
@@ -1042,10 +1047,10 @@ func TestNotYetValidClientCertificate(t *testing.T) {
 	defer testServer.Start()()
 	testUrl := testServer.URL
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		UserAgent("test"),
-		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+	c, err := http_client.NewClient(
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.UserAgent("test"),
+		http_client.TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			if err := cri.SupportsCertificate(clientTlsCert); err != nil {
 				return nil, fmt.Errorf("cert is not accepted: %v", err)
 			}
@@ -1088,7 +1093,7 @@ func TestExpiredClientCertificate(t *testing.T) {
 		PrivateKey:  clientPriv,
 	}
 
-	testServer := &Server{
+	testServer := &http_client.Server{
 		Config:       &http.Server{Handler: infoWriter()},
 		TLS:          true,
 		EnableHTTP2:  false,
@@ -1099,10 +1104,10 @@ func TestExpiredClientCertificate(t *testing.T) {
 	defer testServer.Start()()
 	testUrl := testServer.URL
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		UserAgent("test"),
-		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+	c, err := http_client.NewClient(
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.UserAgent("test"),
+		http_client.TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			if err := cri.SupportsCertificate(clientTlsCert); err != nil {
 				return nil, fmt.Errorf("cert is not accepted: %v", err)
 			}
@@ -1179,7 +1184,7 @@ func TestDynamicClientCertificate(t *testing.T) {
 	clientCertPool.AddCert(clientCert)
 	clientCertPath, clientKeyPath := saveCertificate(t, t.TempDir(), clientCertBytes, clientPriv)
 
-	testServer := &Server{
+	testServer := &http_client.Server{
 		Config:       &http.Server{Handler: infoWriter()},
 		TLS:          true,
 		EnableHTTP2:  false,
@@ -1189,15 +1194,15 @@ func TestDynamicClientCertificate(t *testing.T) {
 	defer testServer.Start()()
 	testUrl := testServer.URL
 
-	dynamicClientCertSource, cancel := StartDynamicFileClientCertificateSource(context.Background(), testr.NewWithOptions(t, testr.Options{
+	dynamicClientCertSource, cancel := http_client.StartDynamicFileClientCertificateSource(context.Background(), testr.NewWithOptions(t, testr.Options{
 		Verbosity: 9,
 	}), clientCertPath, clientKeyPath)
 	defer cancel()
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		UserAgent("test"),
-		TLSDynamicClientCertificate(dynamicClientCertSource),
+	c, err := http_client.NewClient(
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.UserAgent("test"),
+		http_client.TLSDynamicClientCertificate(dynamicClientCertSource),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1235,7 +1240,7 @@ func TestDynamicClientCertificateLate(t *testing.T) {
 	os.Remove(clientCertPath) // delete file, and recreate later
 	os.Remove(clientKeyPath)  // delete file, and recreate later
 
-	testServer := &Server{
+	testServer := &http_client.Server{
 		Config:       &http.Server{Handler: infoWriter()},
 		TLS:          true,
 		EnableHTTP2:  false,
@@ -1245,15 +1250,15 @@ func TestDynamicClientCertificateLate(t *testing.T) {
 	defer testServer.Start()()
 	testUrl := testServer.URL
 
-	dynamicClientCertSource, cancel := StartDynamicFileClientCertificateSource(context.Background(), testr.NewWithOptions(t, testr.Options{
+	dynamicClientCertSource, cancel := http_client.StartDynamicFileClientCertificateSource(context.Background(), testr.NewWithOptions(t, testr.Options{
 		Verbosity: 9,
 	}), clientCertPath, clientKeyPath)
 	defer cancel()
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		UserAgent("test"),
-		TLSDynamicClientCertificate(dynamicClientCertSource),
+	c, err := http_client.NewClient(
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.UserAgent("test"),
+		http_client.TLSDynamicClientCertificate(dynamicClientCertSource),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1297,15 +1302,15 @@ func TestDynamicClientCertificateRenew(t *testing.T) {
 
 	dynamic_clientcert.CertCallbackRefreshDuration = 100 * time.Millisecond
 
-	dynamicClientCertSource, cancel := StartDynamicFileClientCertificateSource(context.Background(), testr.NewWithOptions(t, testr.Options{
+	dynamicClientCertSource, cancel := http_client.StartDynamicFileClientCertificateSource(context.Background(), testr.NewWithOptions(t, testr.Options{
 		Verbosity: 9,
 	}), clientCertPath, clientKeyPath)
 	defer cancel()
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		UserAgent("test"),
-		TLSDynamicClientCertificate(dynamicClientCertSource),
+	c, err := http_client.NewClient(
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.UserAgent("test"),
+		http_client.TLSDynamicClientCertificate(dynamicClientCertSource),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1318,7 +1323,7 @@ func TestDynamicClientCertificateRenew(t *testing.T) {
 		clientCertPool.AddCert(clientCert)
 		_, _ = saveCertificate(t, tempDir, clientCertBytes, clientPriv)
 
-		testServer := &Server{
+		testServer := &http_client.Server{
 			Config:       &http.Server{Handler: infoWriter()},
 			TLS:          true,
 			EnableHTTP2:  false,
@@ -1351,7 +1356,7 @@ func TestDynamicClientCertificateRenew(t *testing.T) {
 
 		time.Sleep(2 * time.Second)
 
-		testServer := &Server{
+		testServer := &http_client.Server{
 			Config:       &http.Server{Handler: infoWriter()},
 			TLS:          true,
 			EnableHTTP2:  false,
@@ -1395,7 +1400,7 @@ func TestDynamicRootCA(t *testing.T) {
 		PrivateKey:  clientPriv,
 	}
 
-	testServer := &Server{
+	testServer := &http_client.Server{
 		Config:       &http.Server{Handler: infoWriter()},
 		TLS:          true,
 		EnableHTTP2:  false,
@@ -1405,21 +1410,21 @@ func TestDynamicRootCA(t *testing.T) {
 	defer testServer.Start()()
 	testUrl := testServer.URL
 
-	dynamicRootCAs, cancel := StartDynamicFileRootCAsSource(context.Background(), testr.NewWithOptions(t, testr.Options{
+	dynamicRootCAs, cancel := http_client.StartDynamicFileRootCAsSource(context.Background(), testr.NewWithOptions(t, testr.Options{
 		Verbosity: 9,
 	}), serverCertPath)
 	defer cancel()
 
-	c, err := NewClient(
-		UserAgent("test"),
-		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+	c, err := http_client.NewClient(
+		http_client.UserAgent("test"),
+		http_client.TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			if err := cri.SupportsCertificate(clientTlsCert); err != nil {
 				return nil, fmt.Errorf("cert is not accepted: %v", err)
 			}
 
 			return clientTlsCert, nil
 		}),
-		TLSDynamicRootCAs(dynamicRootCAs),
+		http_client.TLSDynamicRootCAs(dynamicRootCAs),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1458,7 +1463,7 @@ func TestDynamicRootCALate(t *testing.T) {
 		PrivateKey:  clientPriv,
 	}
 
-	testServer := &Server{
+	testServer := &http_client.Server{
 		Config:       &http.Server{Handler: infoWriter()},
 		TLS:          true,
 		EnableHTTP2:  false,
@@ -1468,21 +1473,21 @@ func TestDynamicRootCALate(t *testing.T) {
 	defer testServer.Start()()
 	testUrl := testServer.URL
 
-	dynamicRootCAs, cancel := StartDynamicFileRootCAsSource(context.Background(), testr.NewWithOptions(t, testr.Options{
+	dynamicRootCAs, cancel := http_client.StartDynamicFileRootCAsSource(context.Background(), testr.NewWithOptions(t, testr.Options{
 		Verbosity: 9,
 	}), serverCertPath)
 	defer cancel()
 
-	c, err := NewClient(
-		UserAgent("test"),
-		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+	c, err := http_client.NewClient(
+		http_client.UserAgent("test"),
+		http_client.TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			if err := cri.SupportsCertificate(clientTlsCert); err != nil {
 				return nil, fmt.Errorf("cert is not accepted: %v", err)
 			}
 
 			return clientTlsCert, nil
 		}),
-		TLSDynamicRootCAs(dynamicRootCAs),
+		http_client.TLSDynamicRootCAs(dynamicRootCAs),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1526,21 +1531,21 @@ func TestDynamicRootCARenew(t *testing.T) {
 
 	dynamic_rootca.CertCallbackRefreshDuration = 100 * time.Millisecond
 
-	dynamicRootCAs, cancel := StartDynamicFileRootCAsSource(context.Background(), testr.NewWithOptions(t, testr.Options{
+	dynamicRootCAs, cancel := http_client.StartDynamicFileRootCAsSource(context.Background(), testr.NewWithOptions(t, testr.Options{
 		Verbosity: 9,
 	}), path.Join(tempDir, "cert.pem"))
 	defer cancel()
 
-	c, err := NewClient(
-		UserAgent("test"),
-		TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+	c, err := http_client.NewClient(
+		http_client.UserAgent("test"),
+		http_client.TLSClientCertificate(func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			if err := cri.SupportsCertificate(clientTlsCert); err != nil {
 				return nil, fmt.Errorf("cert is not accepted: %v", err)
 			}
 
 			return clientTlsCert, nil
 		}),
-		TLSDynamicRootCAs(dynamicRootCAs),
+		http_client.TLSDynamicRootCAs(dynamicRootCAs),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1554,7 +1559,7 @@ func TestDynamicRootCARenew(t *testing.T) {
 		}
 		_, _ = saveCertificate(t, tempDir, serverCertBytes, serverPriv)
 
-		testServer := &Server{
+		testServer := &http_client.Server{
 			Config:       &http.Server{Handler: infoWriter()},
 			TLS:          true,
 			EnableHTTP2:  false,
@@ -1589,7 +1594,7 @@ func TestDynamicRootCARenew(t *testing.T) {
 
 		time.Sleep(200 * time.Millisecond)
 
-		testServer := &Server{
+		testServer := &http_client.Server{
 			Config:       &http.Server{Handler: infoWriter()},
 			TLS:          true,
 			EnableHTTP2:  false,
@@ -1618,8 +1623,8 @@ func TestDynamicRootCARenew(t *testing.T) {
 func TestCustomClient(t *testing.T) {
 	customTimeout := 103 * time.Second
 
-	c, err := NewClient(
-		ManualClient(&http.Client{
+	c, err := http_client.NewClient(
+		http_client.ManualClient(&http.Client{
 			Timeout: customTimeout,
 		}),
 	)
@@ -1646,12 +1651,12 @@ func TestCustomTransport(t *testing.T) {
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ForceAttemptHTTP2 = false
-	transport.TLSClientConfig = createDefaultTlsConfig()
+	transport.TLSClientConfig = &tls.Config{}
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		UserAgent("test"),
-		ManualTransport(transport),
+	c, err := http_client.NewClient(
+		http_client.ManualTransport(transport),
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1686,19 +1691,19 @@ func TestCustomTransportClone(t *testing.T) {
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 
-	_, err := NewClient(
-		EnableHttp2(false),
-		TLSRootCAs(serverCertPool),
-		ManualTransport(transport),
+	_, err := http_client.NewClient(
+		http_client.ManualTransport(transport),
+		http_client.EnableHttp2(false),
+		http_client.TLSRootCAs(serverCertPool),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	c, err := NewClient(
-		TLSRootCAs(serverCertPool),
-		UserAgent("test"),
-		ManualTransport(transport),
+	c, err := http_client.NewClient(
+		http_client.ManualTransport(transport),
+		http_client.TLSRootCAs(serverCertPool),
+		http_client.UserAgent("test"),
 	)
 	if err != nil {
 		t.Fatal(err)

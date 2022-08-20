@@ -45,25 +45,18 @@ func createDefaultTransport() *http.Transport {
 	}
 }
 
+// Copys all the fields of the provided client,
+// except for the Transport, which is skipped.
 func ManualClient(client *http.Client) Option {
 	return func(state *OptionState) error {
 		if client == nil {
 			client = &http.Client{}
 		}
 
-		if state.Client != nil {
-			client.Transport = state.Client.Transport
-		} else {
-			state.Dynamic = roundtrippers.NewDynamicTransportTripper()
+		transport := state.Client.Transport // save current transport
+		*state.Client = *client             // copy all client's fields
+		state.Client.Transport = transport  // restore transport
 
-			state.Dynamic.RegisterTransportCreator(func(_ *http.Transport, _ bool) (*http.Transport, bool, error) {
-				return defaultTransport, false, nil
-			})
-
-			client.Transport = state.Dynamic
-		}
-
-		state.Client = client
 		return nil
 	}
 }
@@ -74,8 +67,8 @@ func DefaultClient() Option {
 
 func ManualTransport(transport *http.Transport) Option {
 	return func(state *OptionState) error {
-		if state.Dynamic == nil {
-			return fmt.Errorf("no dynamic roundtripper registered")
+		if transport == nil {
+			transport = defaultTransport
 		}
 
 		state.Dynamic.RegisterTransportCreator(func(_ *http.Transport, _ bool) (*http.Transport, bool, error) {
@@ -84,6 +77,10 @@ func ManualTransport(transport *http.Transport) Option {
 
 		return nil
 	}
+}
+
+func DefaultTransport() Option {
+	return ManualTransport(nil)
 }
 
 func EnableOption(enable bool, option Option) Option {
@@ -318,10 +315,6 @@ func TLSTime(time func() time.Time) Option {
 
 func TLSEnableSni() Option {
 	return func(state *OptionState) error {
-		if state.Dynamic == nil {
-			return fmt.Errorf("no dynamic roundtripper registered")
-		}
-
 		state.Dynamic.RegisterTransportUpdater(func(req *http.Request, transport *http.Transport, isClone bool) (*http.Transport, error) {
 			// check if TLS is enabled
 			if transport.TLSClientConfig == nil {
@@ -356,10 +349,6 @@ type DynamicRootCAsSource func(state *OptionState) dynamic_rootca.DynamicRootCAs
 func TLSDynamicRootCAs(fn DynamicRootCAsSource) Option {
 	return func(state *OptionState) error {
 		state.Dynamic.RegisterTransportCreator(defaultTlsConfig)
-
-		if state.Dynamic == nil {
-			return fmt.Errorf("no dynamic roundtripper registered")
-		}
 
 		dynamicRootCAsSource := fn(state)
 		state.Dynamic.RegisterTransportUpdater(func(req *http.Request, transport *http.Transport, isClone bool) (*http.Transport, error) {

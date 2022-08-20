@@ -11,10 +11,10 @@ type TransportCreator func(transport *http.Transport, isClone bool) (*http.Trans
 type TransportUpdater func(req *http.Request, transport *http.Transport, isClone bool) (*http.Transport, error)
 
 type DynamicTransportTripper struct {
-	rt              atomic.Value
-	mu              sync.Mutex
-	createTransport []TransportCreator
-	updateTransport []TransportUpdater
+	rt                          atomic.Value
+	mu                          sync.Mutex
+	reverseCreateTransportSteps []TransportCreator
+	reverseUpdateTransportSteps []TransportUpdater
 }
 
 var _ RoundTripperWrapper = &DynamicTransportTripper{}
@@ -24,11 +24,11 @@ func NewDynamicTransportTripper() *DynamicTransportTripper {
 }
 
 func (rt *DynamicTransportTripper) RegisterTransportCreator(fn TransportCreator) {
-	rt.createTransport = append(rt.createTransport, fn)
+	rt.reverseCreateTransportSteps = append(rt.reverseCreateTransportSteps, fn)
 }
 
 func (rt *DynamicTransportTripper) RegisterTransportUpdater(fn TransportUpdater) {
-	rt.updateTransport = append(rt.updateTransport, fn)
+	rt.reverseUpdateTransportSteps = append(rt.reverseUpdateTransportSteps, fn)
 }
 
 func (rt *DynamicTransportTripper) lazyCreateTransport() (*http.Transport, error) {
@@ -42,8 +42,8 @@ func (rt *DynamicTransportTripper) lazyCreateTransport() (*http.Transport, error
 	isClone := false
 	var transport *http.Transport = nil
 
-	for _, creator := range rt.createTransport {
-		if newTransport, newIsClone, err := creator(transport, isClone); err != nil {
+	for i := len(rt.reverseCreateTransportSteps) - 1; i >= 0; i-- {
+		if newTransport, newIsClone, err := rt.reverseCreateTransportSteps[i](transport, isClone); err != nil {
 			return nil, err
 		} else if newTransport == nil {
 			return nil, fmt.Errorf("registerd transport creator did not return a valid *http.Transport")
@@ -53,7 +53,7 @@ func (rt *DynamicTransportTripper) lazyCreateTransport() (*http.Transport, error
 		}
 	}
 
-	rt.createTransport = nil // clear array
+	rt.reverseCreateTransportSteps = nil // clear array
 
 	transport.CloseIdleConnections() // close idle connections from existing transport
 	rt.rt.Store(transport)
@@ -75,8 +75,8 @@ func (rt *DynamicTransportTripper) RoundTrip(req *http.Request) (*http.Response,
 
 	oldTransport := transport
 
-	for _, updater := range rt.updateTransport {
-		if newTransport, err := updater(req, transport, isClone); err != nil {
+	for i := len(rt.reverseUpdateTransportSteps) - 1; i >= 0; i-- {
+		if newTransport, err := rt.reverseUpdateTransportSteps[i](req, transport, isClone); err != nil {
 			return nil, err
 		} else if newTransport == nil {
 			return nil, fmt.Errorf("registerd transport updater did not return a valid *http.Transport")
