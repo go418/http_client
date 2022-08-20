@@ -856,12 +856,13 @@ func TestDebug(t *testing.T) {
 			},
 		}, nil)
 
-	expectedLog := `V\[6\] HTTP request start requestId 1 verb url http:\/\/server\.cloudweb123:\d+
-V\[7\] HTTP request headers requestId 1 ((Authorization Basic <masked>\s*)|(User-Agent test\s*))+
-V\[8\] HTTP trace: DNS lookup requestId 1 host server.cloudweb123 resolved \[{127.0.0.1 }\]
-V\[8\] HTTP trace: dial requestId 1 network tcp key (.*) status success
-V\[7\] HTTP statistics requestId 1 DNS lookup \(ms\) \d+ dial \(ms\) \d+ TLS handshake \(ms\) \d+ ServerProcessing \(ms\) \d+ duration \(ms\) \d+
-V\[7\] HTTP response headers requestId 1 (.*)`
+	expectedLog := `V\[5\] request-\d+ HTTP request verb GET url http:\/\/server\.cloudweb123:\d+
+V\[6\] request-\d+ HTTP request: headers ((Authorization Basic <masked>\s*)|(User-Agent test\s*))+
+V\[9\] request-\d+ HTTP trace: DNS lookup host server.cloudweb123 resolved \[{127.0.0.1 }\]
+V\[9\] request-\d+ HTTP trace: dial network tcp key (.*) status success
+V\[5\] request-\d+ HTTP response verb GET url http:\/\/server\.cloudweb123:\d+ status 200 OK duration \(ms\) \d+
+V\[8\] request-\d+ HTTP response: statistics DNS lookup \(ms\) \d+ dial \(ms\) \d+ TLS handshake \(ms\) \d+ ServerProcessing \(ms\) \d+ duration \(ms\) \d+
+V\[6\] request-\d+ HTTP response: headers (.*)`
 
 	if ok, err := regexp.Match(expectedLog, buf.Bytes()); !ok || err != nil {
 		t.Errorf("expected to log '%s', got '%s' instead", expectedLog, buf.String())
@@ -926,13 +927,14 @@ func TestDebugBody(t *testing.T) {
 			Body: ioutil.NopCloser(bytes.NewBufferString("test")),
 		}, nil)
 
-	expectedLog := `V\[6\] HTTP request start requestId 1 verb url http:\/\/server\.cloudweb123:\d+
-V\[7\] HTTP request headers requestId 1 ((Authorization Basic <masked>\s*)|(User-Agent test\s*))+
-V\[8\] HTTP trace: DNS lookup requestId 1 host server.cloudweb123 resolved \[{127.0.0.1 }\]
-V\[8\] HTTP trace: dial requestId 1 network tcp key (.*) status success
-V\[9\] HTTP request body requestId 1 body test
-V\[7\] HTTP statistics requestId 1 DNS lookup \(ms\) \d+ dial \(ms\) \d+ TLS handshake \(ms\) \d+ ServerProcessing \(ms\) \d+ duration \(ms\) \d+
-V\[7\] HTTP response headers requestId 1 (.*)`
+	expectedLog := `V\[5\] request-\d+ HTTP request verb POST url http:\/\/server\.cloudweb123:\d+
+V\[6\] request-\d+ HTTP request: headers ((Authorization Basic <masked>\s*)|(User-Agent test\s*))+
+V\[9\] request-\d+ HTTP trace: DNS lookup host server.cloudweb123 resolved \[{127.0.0.1 }\]
+V\[9\] request-\d+ HTTP trace: dial network tcp key (.*) status success
+V\[7\] request-\d+ HTTP request: body body test
+V\[5\] request-\d+ HTTP response verb POST url http:\/\/server\.cloudweb123:\d+ status 200 OK duration \(ms\) \d+
+V\[8\] request-\d+ HTTP response: statistics DNS lookup \(ms\) \d+ dial \(ms\) \d+ TLS handshake \(ms\) \d+ ServerProcessing \(ms\) \d+ duration \(ms\) \d+
+V\[6\] request-\d+ HTTP response: headers (.*)`
 
 	if ok, err := regexp.Match(expectedLog, buf.Bytes()); !ok || err != nil {
 		t.Errorf("expected to log '%s', got '%s' instead", expectedLog, buf.String())

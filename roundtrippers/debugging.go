@@ -2,6 +2,7 @@ package roundtrippers
 
 import (
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptrace"
@@ -53,12 +54,13 @@ func (r *requestInfo) complete(response *http.Response, err error) {
 	r.ResponseHeaders = response.Header
 }
 
+var requestId uint64 = 0
+
 // debuggingRoundTripper will display information about the requests passing
 // through it based on what is configured
 type debuggingRoundTripper struct {
-	rt        http.RoundTripper
-	log       logr.Logger
-	requestId uint64
+	rt  http.RoundTripper
+	log logr.Logger
 }
 
 var _ RoundTripperWrapper = &debuggingRoundTripper{}
@@ -67,9 +69,8 @@ var _ RoundTripperWrapper = &debuggingRoundTripper{}
 // on the API requests performed by the client.
 func NewDebuggingRoundTripper(log logr.Logger, rt http.RoundTripper) http.RoundTripper {
 	return &debuggingRoundTripper{
-		rt:        rt,
-		log:       log,
-		requestId: 0,
+		rt:  rt,
+		log: log,
 	}
 }
 
@@ -107,32 +108,40 @@ func maskValue(key string, value string) string {
 
 var DebugBodyChunkLength = 100
 
+// Level 5: log HTTP basic info
+// Level 6: log HTTP headers
+// Level 7: log HTTP body
+// Level 8: log HTTP timings
+// Level 9: log HTTP trace details
 func (rt *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	reqInfo := newRequestInfo(req)
 
-	requestId := atomic.AddUint64(&rt.requestId, 1)
+	requestId := atomic.AddUint64(&requestId, 1)
+	log := rt.log.WithName(fmt.Sprintf("request-%d", requestId))
 
-	rt.log.V(6).Info(
-		"HTTP request start",
-		"requestId", requestId,
+	log.V(5).Info(
+		"HTTP request",
 		"verb", reqInfo.RequestVerb,
 		"url", reqInfo.RequestURL,
 	)
-	rt.log.V(7).Info("HTTP request headers", extractHeaders(requestId, reqInfo.RequestHeaders)...)
+	log.V(6).Info("HTTP request: headers", extractHeaders(reqInfo.RequestHeaders)...)
 
-	if rt.log.V(9).Enabled() {
+	if log.V(7).Enabled() {
 		req.Body = newBodyLogTeeReader(
 			req.Body,
 			DebugBodyChunkLength,
 			func(b []byte) {
-				rt.log.V(9).Info("HTTP request body", "requestId", requestId, "body", string(b))
+				if len(b) == 0 {
+					return
+				}
+				log.V(7).Info("HTTP request: body", "body", string(b))
 			},
 		)
 	}
 
 	startTime := time.Now()
 
-	if rt.log.V(7).Enabled() {
+	if log.V(8).Enabled() {
 		var getConn, dnsStart, dialStart, tlsStart, serverStart time.Time
 		var host string
 		trace := &httptrace.ClientTrace{
@@ -147,7 +156,7 @@ func (rt *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 				reqInfo.muTrace.Lock()
 				defer reqInfo.muTrace.Unlock()
 				reqInfo.DNSLookup = time.Since(dnsStart)
-				rt.log.V(8).Info("HTTP trace: DNS lookup", "requestId", requestId, "host", host, "resolved", info.Addrs)
+				log.V(9).Info("HTTP trace: DNS lookup", "host", host, "resolved", info.Addrs)
 			},
 			// Dial
 			ConnectStart: func(network, addr string) {
@@ -160,9 +169,9 @@ func (rt *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 				defer reqInfo.muTrace.Unlock()
 				reqInfo.Dialing = time.Since(dialStart)
 				if err != nil {
-					rt.log.V(8).Info("HTTP trace: dial", "requestId", requestId, "network", network, "key", addr, "status", "failed", "error", err)
+					log.V(9).Info("HTTP trace: dial", "network", network, "key", addr, "status", "failed", "error", err)
 				} else {
-					rt.log.V(8).Info("HTTP trace: dial", "requestId", requestId, "network", network, "key", addr, "status", "success")
+					log.V(9).Info("HTTP trace: dial", "network", network, "key", addr, "status", "success")
 				}
 			},
 			// TLS
@@ -204,8 +213,16 @@ func (rt *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 
 	reqInfo.complete(response, err)
 
-	if rt.log.V(7).Enabled() {
-		stats := []interface{}{"requestId", requestId}
+	log.V(5).Info(
+		"HTTP response",
+		"verb", reqInfo.RequestVerb,
+		"url", reqInfo.RequestURL,
+		"status", reqInfo.ResponseStatus,
+		"duration (ms)", reqInfo.Duration.Nanoseconds()/int64(time.Millisecond),
+	)
+
+	if log.V(8).Enabled() {
+		stats := []interface{}{}
 		if !reqInfo.ConnectionReused {
 			stats = append(stats,
 				"DNS lookup (ms)", reqInfo.DNSLookup.Nanoseconds()/int64(time.Millisecond),
@@ -220,26 +237,20 @@ func (rt *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 		}
 		stats = append(stats, "duration (ms)", reqInfo.Duration.Nanoseconds()/int64(time.Millisecond))
 
-		rt.log.V(7).Info("HTTP statistics", stats...)
-	} else {
-		rt.log.V(6).Info(
-			"HTTP request finished",
-			"requestId", requestId,
-			"verb", reqInfo.RequestVerb,
-			"url", reqInfo.RequestURL,
-			"status", reqInfo.ResponseStatus,
-			"duration (ms)", reqInfo.Duration.Nanoseconds()/int64(time.Millisecond),
-		)
+		log.V(8).Info("HTTP response: statistics", stats...)
 	}
 
-	rt.log.V(7).Info("HTTP response headers", extractHeaders(requestId, reqInfo.ResponseHeaders)...)
+	log.V(6).Info("HTTP response: headers", extractHeaders(reqInfo.ResponseHeaders)...)
 
-	if rt.log.V(9).Enabled() {
+	if log.V(7).Enabled() {
 		response.Body = newBodyLogTeeReader(
 			response.Body,
 			DebugBodyChunkLength,
 			func(b []byte) {
-				rt.log.V(9).Info("HTTP response body", "requestId", requestId, "body", string(b))
+				if len(b) == 0 {
+					return
+				}
+				log.V(7).Info("HTTP response: body", "body", string(b))
 			},
 		)
 	}
@@ -292,8 +303,8 @@ func (rt *debuggingRoundTripper) WrappedRoundTripper() http.RoundTripper {
 	return rt.rt
 }
 
-func extractHeaders(requestId uint64, headers http.Header) []interface{} {
-	flat := []interface{}{"requestId", requestId}
+func extractHeaders(headers http.Header) []interface{} {
+	flat := []interface{}{}
 	for key, values := range headers {
 		for _, value := range values {
 			value = maskValue(key, value)
