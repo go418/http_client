@@ -525,3 +525,14 @@ func ManualCloneRequest() Option {
 		return nil
 	}
 }
+
+func RoundTripper(fn func(http.RoundTripper) (http.RoundTripper, error)) Option {
+	return func(state *OptionState) error {
+		if transport, err := fn(state.Client.Transport); err != nil {
+			return err
+		} else {
+			state.Client.Transport = transport
+			return nil
+		}
+	}
+}
