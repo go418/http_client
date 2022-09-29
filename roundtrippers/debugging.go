@@ -242,7 +242,7 @@ func (rt *debuggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 
 	log.V(6).Info("HTTP response: headers", extractHeaders(reqInfo.ResponseHeaders)...)
 
-	if log.V(7).Enabled() {
+	if log.V(7).Enabled() && response != nil {
 		response.Body = newBodyLogTeeReader(
 			response.Body,
 			DebugBodyChunkLength,
