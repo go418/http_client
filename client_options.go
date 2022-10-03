@@ -179,6 +179,24 @@ func defaultTlsConfig(transport *http.Transport, isClone bool) (*http.Transport,
 	return transport, true, nil
 }
 
+func TLSRenegotation(renegotiationSupport tls.RenegotiationSupport) Option {
+	return func(state *OptionState) error {
+		state.Dynamic.RegisterTransportCreator(func(transport *http.Transport, isClone bool) (*http.Transport, bool, error) {
+			if transport.TLSClientConfig.Renegotiation == renegotiationSupport {
+				return transport, isClone, nil
+			}
+
+			if !isClone {
+				transport = transport.Clone()
+			}
+			transport.TLSClientConfig.Renegotiation = renegotiationSupport
+
+			return transport, true, nil
+		})
+		return nil
+	}
+}
+
 func TLSInsecureSkipVerify(insecureSkipVerify bool) Option {
 	return func(state *OptionState) error {
 		state.Dynamic.RegisterTransportCreator(defaultTlsConfig)
